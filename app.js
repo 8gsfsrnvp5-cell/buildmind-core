@@ -1676,3 +1676,249 @@ function initializeProjectDocuments() {
 }
 
 initializeProjectDocuments();
+
+/* ==================================================
+   ЛОКАЛЬНАЯ ДИАГНОСТИКА PDF
+   ================================================== */
+
+function getPdfTextLayerType(
+  pagesWithText,
+  totalPages
+) {
+  if (pagesWithText === 0) {
+    return (
+      'Вероятный скан — ' +
+      'текстовый слой не обнаружен'
+    );
+  }
+
+  if (pagesWithText === totalPages) {
+    return (
+      'Текстовый PDF — ' +
+      'текстовый слой найден на всех страницах'
+    );
+  }
+
+  return (
+    'Смешанный PDF — ' +
+    `текстовый слой найден на ` +
+    `${pagesWithText} из ${totalPages} страниц`
+  );
+}
+
+async function inspectPdfDocument(
+  documentItem
+) {
+  let pdfDocument = null;
+
+  try {
+    const fileBuffer =
+      await documentItem.file.arrayBuffer();
+
+    const loadingTask =
+      window.pdfjsLib.getDocument({
+        data: new Uint8Array(fileBuffer)
+      });
+
+    pdfDocument =
+      await loadingTask.promise;
+
+    let pagesWithText = 0;
+
+    for (
+      let pageNumber = 1;
+      pageNumber <= pdfDocument.numPages;
+      pageNumber += 1
+    ) {
+      const page =
+        await pdfDocument.getPage(
+          pageNumber
+        );
+
+      const textContent =
+        await page.getTextContent();
+
+      const extractedText =
+        textContent.items
+          .map(function (item) {
+            return item.str || '';
+          })
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      const meaningfulTextLength =
+        extractedText.replace(
+          /\s+/g,
+          ''
+        ).length;
+
+      if (meaningfulTextLength >= 20) {
+        pagesWithText += 1;
+      }
+
+      page.cleanup();
+    }
+
+    return {
+      success: true,
+      fileName: documentItem.file.name,
+      totalPages: pdfDocument.numPages,
+      pagesWithText,
+      pdfType: getPdfTextLayerType(
+        pagesWithText,
+        pdfDocument.numPages
+      )
+    };
+  } catch (error) {
+    console.error(
+      'Ошибка диагностики PDF:',
+      error
+    );
+
+    let errorMessage =
+      'Не удалось открыть или проверить PDF.';
+
+    if (
+      error &&
+      error.name === 'PasswordException'
+    ) {
+      errorMessage =
+        'PDF защищён паролем.';
+    }
+
+    return {
+      success: false,
+      fileName: documentItem.file.name,
+      errorMessage
+    };
+  } finally {
+    if (
+      pdfDocument &&
+      typeof pdfDocument.destroy ===
+        'function'
+    ) {
+      await pdfDocument.destroy();
+    }
+  }
+}
+
+async function analyzeSelectedPdfDocuments() {
+  const message =
+    document.getElementById(
+      'documentsMessage'
+    );
+
+  const analyzeButton =
+    document.getElementById(
+      'analyzePdfBtn'
+    );
+
+  if (!message || !analyzeButton) {
+    return;
+  }
+
+  const pdfDocuments =
+    uploadedProjectDocuments.filter(
+      function (documentItem) {
+        return (
+          getProjectDocumentExtension(
+            documentItem.file
+          ) === 'pdf'
+        );
+      }
+    );
+
+  if (pdfDocuments.length === 0) {
+    message.textContent =
+      'Сначала выберите хотя бы один PDF-файл.';
+
+    return;
+  }
+
+  if (!window.pdfjsLib) {
+    message.textContent =
+      'Библиотека PDF ещё загружается. ' +
+      'Проверьте подключение к интернету ' +
+      'и повторите через несколько секунд.';
+
+    return;
+  }
+
+  analyzeButton.disabled = true;
+
+  analyzeButton.textContent =
+    'Проверка PDF...';
+
+  message.textContent =
+    `Начинается проверка: ` +
+    `${getDocumentsCountText(
+      pdfDocuments.length
+    )}.`;
+
+  const results = [];
+
+  for (
+    let index = 0;
+    index < pdfDocuments.length;
+    index += 1
+  ) {
+    const documentItem =
+      pdfDocuments[index];
+
+    message.textContent =
+      `Проверяется ${index + 1} из ` +
+      `${pdfDocuments.length}:\n` +
+      documentItem.file.name;
+
+    const result =
+      await inspectPdfDocument(
+        documentItem
+      );
+
+    results.push(result);
+  }
+
+  const resultLines =
+    results.map(function (result) {
+      if (!result.success) {
+        return (
+          `✗ ${result.fileName}\n` +
+          `  ${result.errorMessage}`
+        );
+      }
+
+      return (
+        `✓ ${result.fileName}\n` +
+        `  Страниц: ${result.totalPages}\n` +
+        `  ${result.pdfType}`
+      );
+    });
+
+  message.textContent =
+    'Диагностика PDF завершена:\n\n' +
+    resultLines.join('\n\n');
+
+  analyzeButton.disabled = false;
+
+  analyzeButton.textContent =
+    'Проверить PDF';
+}
+
+function initializePdfDiagnostics() {
+  const analyzeButton =
+    document.getElementById(
+      'analyzePdfBtn'
+    );
+
+  if (!analyzeButton) {
+    return;
+  }
+
+  analyzeButton.addEventListener(
+    'click',
+    analyzeSelectedPdfDocuments
+  );
+}
+
+initializePdfDiagnostics();
