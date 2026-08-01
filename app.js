@@ -1247,3 +1247,432 @@ function clearBuildMindAssistant() {
 
 window.runBuildMindAssistant = runBuildMindAssistant;
 window.clearBuildMindAssistant = clearBuildMindAssistant;
+/* ==================================================
+   ПРОЕКТНЫЕ ДОКУМЕНТЫ И ГПР
+   ================================================== */
+
+let uploadedProjectDocuments = [];
+
+function getProjectDocumentId(file) {
+  return [
+    file.name,
+    file.size,
+    file.lastModified
+  ].join('-');
+}
+
+function getProjectDocumentExtension(file) {
+  const parts =
+    String(file.name || '').split('.');
+
+  return parts.length > 1
+    ? parts.pop().toLowerCase()
+    : '';
+}
+
+function getProjectDocumentType(file) {
+  const extension =
+    getProjectDocumentExtension(file);
+
+  const documentTypes = {
+    pdf: 'PDF-документ',
+    xlsx: 'Excel XLSX',
+    xls: 'Excel XLS',
+    csv: 'Таблица CSV'
+  };
+
+  return (
+    documentTypes[extension] ||
+    'Неизвестный формат'
+  );
+}
+
+function formatProjectDocumentSize(bytes) {
+  const size =
+    Number(bytes) || 0;
+
+  if (size < 1024) {
+    return `${size} Б`;
+  }
+
+  if (size < 1024 * 1024) {
+    return (
+      `${(size / 1024).toFixed(1)} КБ`
+    );
+  }
+
+  return (
+    `${(
+      size /
+      (1024 * 1024)
+    ).toFixed(1)} МБ`
+  );
+}
+
+function getDocumentsCountText(count) {
+  const lastTwo =
+    count % 100;
+
+  const lastOne =
+    count % 10;
+
+  if (
+    lastTwo >= 11 &&
+    lastTwo <= 14
+  ) {
+    return `${count} файлов`;
+  }
+
+  if (lastOne === 1) {
+    return `${count} файл`;
+  }
+
+  if (
+    lastOne >= 2 &&
+    lastOne <= 4
+  ) {
+    return `${count} файла`;
+  }
+
+  return `${count} файлов`;
+}
+
+function renderProjectDocuments() {
+  const list =
+    document.getElementById(
+      'documentsList'
+    );
+
+  const count =
+    document.getElementById(
+      'documentsCount'
+    );
+
+  const message =
+    document.getElementById(
+      'documentsMessage'
+    );
+
+  const clearButton =
+    document.getElementById(
+      'clearDocumentsBtn'
+    );
+
+  if (
+    !list ||
+    !count ||
+    !message ||
+    !clearButton
+  ) {
+    return;
+  }
+
+  list.innerHTML = '';
+
+  count.textContent =
+    getDocumentsCountText(
+      uploadedProjectDocuments.length
+    );
+
+  clearButton.disabled =
+    uploadedProjectDocuments.length === 0;
+
+  if (
+    uploadedProjectDocuments.length === 0
+  ) {
+    message.textContent =
+      'Файлы пока не выбраны.';
+
+    return;
+  }
+
+  message.textContent =
+    'Документы подготовлены к последующему анализу.';
+
+  uploadedProjectDocuments.forEach(
+    function (documentItem) {
+      const card =
+        document.createElement('article');
+
+      card.className =
+        'document-file-card';
+
+      const main =
+        document.createElement('div');
+
+      main.className =
+        'document-file-main';
+
+      const name =
+        document.createElement('p');
+
+      name.className =
+        'document-file-name';
+
+      name.textContent =
+        documentItem.file.name;
+
+      const meta =
+        document.createElement('div');
+
+      meta.className =
+        'document-file-meta';
+
+      const type =
+        document.createElement('span');
+
+      type.textContent =
+        getProjectDocumentType(
+          documentItem.file
+        );
+
+      const size =
+        document.createElement('span');
+
+      size.textContent =
+        formatProjectDocumentSize(
+          documentItem.file.size
+        );
+
+      const status =
+        document.createElement('span');
+
+      status.className =
+        'document-status';
+
+      status.textContent =
+        'Ожидает анализа';
+
+      meta.appendChild(type);
+      meta.appendChild(size);
+      meta.appendChild(status);
+
+      main.appendChild(name);
+      main.appendChild(meta);
+
+      const removeButton =
+        document.createElement('button');
+
+      removeButton.type = 'button';
+
+      removeButton.className =
+        'document-remove-btn';
+
+      removeButton.textContent =
+        'Удалить';
+
+      removeButton.dataset.documentId =
+        documentItem.id;
+
+      card.appendChild(main);
+      card.appendChild(removeButton);
+      list.appendChild(card);
+    }
+  );
+}
+
+function addProjectDocuments(fileList) {
+  const allowedExtensions = [
+    'pdf',
+    'xlsx',
+    'xls',
+    'csv'
+  ];
+
+  const incomingFiles =
+    Array.from(fileList || []);
+
+  const rejectedFiles = [];
+
+  incomingFiles.forEach(function (file) {
+    const extension =
+      getProjectDocumentExtension(file);
+
+    if (
+      !allowedExtensions.includes(
+        extension
+      )
+    ) {
+      rejectedFiles.push(file.name);
+      return;
+    }
+
+    const id =
+      getProjectDocumentId(file);
+
+    const alreadyExists =
+      uploadedProjectDocuments.some(
+        function (documentItem) {
+          return documentItem.id === id;
+        }
+      );
+
+    if (!alreadyExists) {
+      uploadedProjectDocuments.push({
+        id,
+        file,
+        status: 'waiting'
+      });
+    }
+  });
+
+  renderProjectDocuments();
+
+  const message =
+    document.getElementById(
+      'documentsMessage'
+    );
+
+  if (
+    message &&
+    rejectedFiles.length > 0
+  ) {
+    message.textContent =
+      'Не добавлены неподдерживаемые файлы: ' +
+      rejectedFiles.join(', ');
+  }
+}
+
+function initializeProjectDocuments() {
+  const input =
+    document.getElementById(
+      'projectDocumentsInput'
+    );
+
+  const selectButton =
+    document.getElementById(
+      'selectDocumentsBtn'
+    );
+
+  const clearButton =
+    document.getElementById(
+      'clearDocumentsBtn'
+    );
+
+  const dropZone =
+    document.getElementById(
+      'documentsDropZone'
+    );
+
+  const list =
+    document.getElementById(
+      'documentsList'
+    );
+
+  if (
+    !input ||
+    !selectButton ||
+    !clearButton ||
+    !dropZone ||
+    !list
+  ) {
+    return;
+  }
+
+  selectButton.addEventListener(
+    'click',
+    function () {
+      input.click();
+    }
+  );
+
+  input.addEventListener(
+    'change',
+    function () {
+      addProjectDocuments(
+        input.files
+      );
+
+      input.value = '';
+    }
+  );
+
+  clearButton.addEventListener(
+    'click',
+    function () {
+      uploadedProjectDocuments = [];
+      renderProjectDocuments();
+    }
+  );
+
+  list.addEventListener(
+    'click',
+    function (event) {
+      const removeButton =
+        event.target.closest(
+          '.document-remove-btn'
+        );
+
+      if (!removeButton) {
+        return;
+      }
+
+      const documentId =
+        removeButton.dataset.documentId;
+
+      uploadedProjectDocuments =
+        uploadedProjectDocuments.filter(
+          function (documentItem) {
+            return (
+              documentItem.id !==
+              documentId
+            );
+          }
+        );
+
+      renderProjectDocuments();
+    }
+  );
+
+  dropZone.addEventListener(
+    'dragover',
+    function (event) {
+      event.preventDefault();
+
+      dropZone.classList.add(
+        'drag-over'
+      );
+    }
+  );
+
+  dropZone.addEventListener(
+    'dragleave',
+    function () {
+      dropZone.classList.remove(
+        'drag-over'
+      );
+    }
+  );
+
+  dropZone.addEventListener(
+    'drop',
+    function (event) {
+      event.preventDefault();
+
+      dropZone.classList.remove(
+        'drag-over'
+      );
+
+      addProjectDocuments(
+        event.dataTransfer.files
+      );
+    }
+  );
+
+  dropZone.addEventListener(
+    'keydown',
+    function (event) {
+      if (
+        event.key === 'Enter' ||
+        event.key === ' '
+      ) {
+        event.preventDefault();
+        input.click();
+      }
+    }
+  );
+
+  renderProjectDocuments();
+}
+
+initializeProjectDocuments();
