@@ -1437,11 +1437,43 @@ function renderProjectDocuments() {
       const status =
         document.createElement('span');
 
-      status.className =
-        'document-status';
+     status.className =
+  'document-status';
 
-      status.textContent =
-        'Ожидает анализа';
+if (
+  documentItem.status ===
+  'analyzing'
+) {
+  status.textContent =
+    'Проверяется';
+
+  status.classList.add(
+    'document-status-analyzing'
+  );
+} else if (
+  documentItem.status ===
+  'analyzed'
+) {
+  status.textContent =
+    'Проверен';
+
+  status.classList.add(
+    'document-status-analyzed'
+  );
+} else if (
+  documentItem.status ===
+  'error'
+) {
+  status.textContent =
+    'Ошибка проверки';
+
+  status.classList.add(
+    'document-status-error'
+  );
+} else {
+  status.textContent =
+    'Ожидает анализа';
+}
 
       meta.appendChild(type);
       meta.appendChild(size);
@@ -1449,6 +1481,36 @@ function renderProjectDocuments() {
 
       main.appendChild(name);
       main.appendChild(meta);
+
+      if (documentItem.analysis) {
+  const analysisResult =
+    document.createElement('div');
+
+  analysisResult.className =
+    'document-analysis-result';
+
+  if (
+    documentItem.analysis.success
+  ) {
+    const result =
+      documentItem.analysis;
+
+    analysisResult.textContent =
+      `Страниц: ${result.totalPages}. ` +
+      `Текст найден на ` +
+      `${result.pagesWithText} из ` +
+      `${result.totalPages} страниц. ` +
+      result.pdfType;
+  } else {
+    analysisResult.textContent =
+      documentItem.analysis.errorMessage ||
+      'Не удалось проверить документ.';
+  }
+
+  main.appendChild(
+    analysisResult
+  );
+}
 
       const removeButton =
         document.createElement('button');
@@ -1865,18 +1927,35 @@ async function analyzeSelectedPdfDocuments() {
   ) {
     const documentItem =
       pdfDocuments[index];
+    
+documentItem.status =
+  'analyzing';
 
+documentItem.analysis = null;
+
+renderProjectDocuments();
+    
     message.textContent =
       `Проверяется ${index + 1} из ` +
       `${pdfDocuments.length}:\n` +
       documentItem.file.name;
 
     const result =
-      await inspectPdfDocument(
-        documentItem
-      );
+  await inspectPdfDocument(
+    documentItem
+  );
 
-    results.push(result);
+documentItem.analysis =
+  result;
+
+documentItem.status =
+  result.success
+    ? 'analyzed'
+    : 'error';
+
+results.push(result);
+
+renderProjectDocuments();
   }
 
   const resultLines =
