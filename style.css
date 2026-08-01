@@ -900,3 +900,65 @@ th { background: #f8fafc; color: #334155; white-space: nowrap; }
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ==================================================
+   ИЗВЛЕЧЁННЫЙ ТЕКСТ PDF
+   ================================================== */
+
+.document-text-details {
+  margin-top: 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.document-text-details summary {
+  padding: 11px 13px;
+  background: #f8fafc;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.document-text-details summary:hover {
+  background: #f2f4f7;
+}
+
+.document-text-page {
+  padding: 13px;
+  border-top: 1px solid #eaecf0;
+}
+
+.document-text-page h5 {
+  margin: 0 0 9px;
+  color: #101828;
+  font-size: 13px;
+}
+
+.document-text-page pre {
+  max-height: 300px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  background: #101828;
+  color: #f8fafc;
+  font-family:
+    Consolas,
+    "Courier New",
+    monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.document-text-truncated {
+  margin: 8px 0 0;
+  color: #b54708;
+  font-size: 12px;
+}
