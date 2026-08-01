@@ -1512,6 +1512,93 @@ if (
   );
         if (
   documentItem.analysis.success &&
+  documentItem.analysis
+    .documentClassification
+) {
+  const classification =
+    documentItem.analysis
+      .documentClassification;
+
+  const classificationBlock =
+    document.createElement('div');
+
+  classificationBlock.className =
+    'document-classification';
+
+  const classificationTitle =
+    document.createElement('strong');
+
+  classificationTitle.textContent =
+    'Предполагаемый тип: ' +
+    classification.label;
+
+  classificationBlock.appendChild(
+    classificationTitle
+  );
+
+  const confidenceText =
+    document.createElement('p');
+
+  confidenceText.textContent =
+    'Уверенность классификации: ' +
+    classification.confidence;
+
+  classificationBlock.appendChild(
+    confidenceText
+  );
+
+  if (
+    classification.sourcePages.length >
+    0
+  ) {
+    const pagesText =
+      document.createElement('p');
+
+    pagesText.textContent =
+      'Страницы-источники: ' +
+      classification.sourcePages.join(
+        ', '
+      );
+
+    classificationBlock.appendChild(
+      pagesText
+    );
+  }
+
+  if (
+    classification
+      .matchedKeywords.length > 0
+  ) {
+    const keywordsText =
+      document.createElement('p');
+
+    keywordsText.textContent =
+      'Найденные признаки: ' +
+      classification
+        .matchedKeywords
+        .join(', ');
+
+    classificationBlock.appendChild(
+      keywordsText
+    );
+  }
+
+  const warningText =
+    document.createElement('small');
+
+  warningText.textContent =
+    'Тип определён автоматически и требует подтверждения инженером.';
+
+  classificationBlock.appendChild(
+    warningText
+  );
+
+  main.appendChild(
+    classificationBlock
+  );
+}
+        if (
+  documentItem.analysis.success &&
   Array.isArray(
     documentItem.analysis
       .extractedPages
@@ -1863,6 +1950,313 @@ function getPdfTextLayerType(
   );
 }
 
+/* ==================================================
+   КЛАССИФИКАЦИЯ ПРОЕКТНЫХ ДОКУМЕНТОВ
+   ================================================== */
+
+const PROJECT_DOCUMENT_RULES = [
+  {
+    id: 'schedule',
+    label: 'График производства работ',
+    keywords: [
+      ['график производства работ', 8],
+      ['календарный график', 7],
+      ['календарный план', 6],
+      ['гпр', 5],
+      ['начало работ', 3],
+      ['окончание работ', 3],
+      ['продолжительность', 2],
+      ['срок выполнения', 2]
+    ]
+  },
+  {
+    id: 'specification',
+    label: 'Спецификация материалов и оборудования',
+    keywords: [
+      ['спецификация оборудования', 8],
+      ['спецификация материалов', 8],
+      ['наименование и техническая характеристика', 7],
+      ['единица измерения', 4],
+      ['ед. изм.', 4],
+      ['количество', 3],
+      ['масса единицы', 3],
+      ['позиция', 2]
+    ]
+  },
+  {
+    id: 'work-volume',
+    label: 'Ведомость объёмов работ',
+    keywords: [
+      ['ведомость объемов работ', 8],
+      ['ведомость объёмов работ', 8],
+      ['объем работ', 5],
+      ['объём работ', 5],
+      ['вид работ', 3],
+      ['единица измерения', 3],
+      ['количество', 2]
+    ]
+  },
+  {
+    id: 'cable-journal',
+    label: 'Кабельный журнал',
+    keywords: [
+      ['кабельный журнал', 10],
+      ['марка кабеля', 6],
+      ['длина кабеля', 5],
+      ['откуда', 3],
+      ['куда', 3],
+      ['обозначение кабеля', 4]
+    ]
+  },
+  {
+    id: 'explanatory-note',
+    label: 'Пояснительная записка',
+    keywords: [
+      ['пояснительная записка', 10],
+      ['общие указания', 5],
+      ['исходные данные', 4],
+      ['принятые решения', 4],
+      ['технические решения', 3]
+    ]
+  },
+  {
+    id: 'estimate',
+    label: 'Сметная документация',
+    keywords: [
+      ['локальная смета', 9],
+      ['локальный сметный расчет', 9],
+      ['локальный сметный расчёт', 9],
+      ['сметная стоимость', 6],
+      ['ресурсная ведомость', 6],
+      ['шифр расценки', 5],
+      ['всего по смете', 5]
+    ]
+  },
+  {
+    id: 'working-documents',
+    label: 'Комплект рабочей документации',
+    keywords: [
+      ['рабочая документация', 7],
+      ['рабочий проект', 5],
+      ['общие данные', 4],
+      ['стадия', 2],
+      ['номер листа', 3],
+      ['формат', 2],
+      ['лист', 1]
+    ]
+  }
+];
+
+function normalizeProjectDocumentText(
+  value
+) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeProjectDocumentRegExp(
+  value
+) {
+  return String(value).replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&'
+  );
+}
+
+function countProjectDocumentPhrase(
+  text,
+  phrase
+) {
+  const normalizedPhrase =
+    normalizeProjectDocumentText(
+      phrase
+    );
+
+  if (!normalizedPhrase) {
+    return 0;
+  }
+
+  const expression =
+    new RegExp(
+      escapeProjectDocumentRegExp(
+        normalizedPhrase
+      ),
+      'g'
+    );
+
+  const matches =
+    text.match(expression);
+
+  return matches
+    ? matches.length
+    : 0;
+}
+
+function classifyProjectDocument(
+  extractedPages
+) {
+  const pages =
+    Array.isArray(extractedPages)
+      ? extractedPages
+      : [];
+
+  const normalizedPages =
+    pages.map(function (pageItem) {
+      return {
+        pageNumber:
+          pageItem.pageNumber,
+        text:
+          normalizeProjectDocumentText(
+            pageItem.text
+          )
+      };
+    });
+
+  const fullText =
+    normalizedPages
+      .map(function (pageItem) {
+        return pageItem.text;
+      })
+      .join(' ');
+
+  if (!fullText) {
+    return {
+      id: 'unknown',
+      label:
+        'Тип документа пока не определён',
+      confidence: 'Нет данных',
+      matchedKeywords: [],
+      sourcePages: []
+    };
+  }
+
+  const classificationResults =
+    PROJECT_DOCUMENT_RULES.map(
+      function (rule) {
+        let score = 0;
+
+        const matchedKeywords = [];
+
+        rule.keywords.forEach(
+          function (keywordRule) {
+            const keyword =
+              keywordRule[0];
+
+            const weight =
+              keywordRule[1];
+
+            const occurrences =
+              countProjectDocumentPhrase(
+                fullText,
+                keyword
+              );
+
+            if (occurrences > 0) {
+              score +=
+                occurrences * weight;
+
+              matchedKeywords.push(
+                keyword
+              );
+            }
+          }
+        );
+
+        const sourcePages =
+          normalizedPages
+            .filter(function (pageItem) {
+              return matchedKeywords.some(
+                function (keyword) {
+                  return pageItem.text
+                    .includes(
+                      normalizeProjectDocumentText(
+                        keyword
+                      )
+                    );
+                }
+              );
+            })
+            .map(function (pageItem) {
+              return pageItem.pageNumber;
+            });
+
+        return {
+          id: rule.id,
+          label: rule.label,
+          score,
+          matchedKeywords,
+          sourcePages:
+            Array.from(
+              new Set(sourcePages)
+            )
+        };
+      }
+    );
+
+  classificationResults.sort(
+    function (first, second) {
+      return (
+        second.score -
+        first.score
+      );
+    }
+  );
+
+  const bestResult =
+    classificationResults[0];
+
+  const secondResult =
+    classificationResults[1];
+
+  if (
+    !bestResult ||
+    bestResult.score < 4
+  ) {
+    return {
+      id: 'unknown',
+      label:
+        'Тип документа пока не определён',
+      confidence: 'Низкая',
+      matchedKeywords: [],
+      sourcePages: []
+    };
+  }
+
+  let confidence = 'Низкая';
+
+  const secondScore =
+    secondResult
+      ? secondResult.score
+      : 0;
+
+  if (
+    bestResult.score >= 12 &&
+    bestResult.score >=
+      secondScore * 1.5
+  ) {
+    confidence = 'Высокая';
+  } else if (
+    bestResult.score >= 7
+  ) {
+    confidence = 'Средняя';
+  }
+
+  return {
+    id: bestResult.id,
+    label: bestResult.label,
+    confidence,
+    matchedKeywords:
+      bestResult.matchedKeywords
+        .slice(0, 8),
+    sourcePages:
+      bestResult.sourcePages
+        .slice(0, 12)
+  };
+}
+
 async function inspectPdfDocument(
   documentItem
 ) {
@@ -1932,15 +2326,21 @@ if (meaningfulTextLength >= 20) {
       page.cleanup();
     }
 
+const documentClassification =
+  classifyProjectDocument(
+    extractedPages
+  );
+    
     return {
   success: true,
   fileName:
     documentItem.file.name,
   totalPages:
     pdfDocument.numPages,
-  pagesWithText,
-  extractedPages,
-  pdfType:
+ pagesWithText,
+extractedPages,
+documentClassification,
+pdfType:
     getPdfTextLayerType(
       pagesWithText,
       pdfDocument.numPages
