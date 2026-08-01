@@ -962,3 +962,37 @@ th { background: #f8fafc; color: #334155; white-space: nowrap; }
   color: #b54708;
   font-size: 12px;
 }
+/* ==================================================
+   КЛАССИФИКАЦИЯ ДОКУМЕНТОВ
+   ================================================== */
+
+.document-classification {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-left: 5px solid #2563eb;
+  border-radius: 9px;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.document-classification strong {
+  display: block;
+  margin-bottom: 7px;
+  color: #1e3a8a;
+  font-size: 14px;
+}
+
+.document-classification p {
+  margin: 4px 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.document-classification small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  line-height: 1.4;
+}
