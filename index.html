@@ -279,13 +279,22 @@
     </small>
   </div>
 
-  <div class="documents-toolbar">
-    <p
-      id="documentsMessage"
-      class="documents-message"
+ <div class="documents-toolbar">
+  <p
+    id="documentsMessage"
+    class="documents-message"
+  >
+    Файлы пока не выбраны.
+  </p>
+
+  <div class="documents-actions">
+    <button
+      type="button"
+      id="analyzePdfBtn"
+      class="primary documents-analyze-btn"
     >
-      Файлы пока не выбраны.
-    </p>
+      Проверить PDF
+    </button>
 
     <button
       type="button"
@@ -296,6 +305,7 @@
       Очистить список
     </button>
   </div>
+</div>
 
   <div
     id="documentsList"
@@ -492,6 +502,16 @@
       <button id="resetBtn" class="secondary">Сбросить к примеру</button>
     </section>
   </main>
+  <script type="module">
+  import * as pdfjsLib from
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.min.mjs';
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.7.284/build/pdf.worker.min.mjs';
+
+  window.pdfjsLib = pdfjsLib;
+</script>
+  
   <script src="app.js"></script>
 
   <script>
