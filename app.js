@@ -1510,6 +1510,101 @@ if (
   main.appendChild(
     analysisResult
   );
+        if (
+  documentItem.analysis.success &&
+  Array.isArray(
+    documentItem.analysis
+      .extractedPages
+  ) &&
+  documentItem.analysis
+    .extractedPages.length > 0
+) {
+  const textDetails =
+    document.createElement(
+      'details'
+    );
+
+  textDetails.className =
+    'document-text-details';
+
+  const textSummary =
+    document.createElement(
+      'summary'
+    );
+
+  textSummary.textContent =
+    'Показать извлечённый текст — ' +
+    documentItem.analysis
+      .extractedPages.length +
+    ' стр.';
+
+  textDetails.appendChild(
+    textSummary
+  );
+
+  documentItem.analysis
+    .extractedPages
+    .forEach(function (pageItem) {
+      const pageBlock =
+        document.createElement(
+          'section'
+        );
+
+      pageBlock.className =
+        'document-text-page';
+
+      const pageTitle =
+        document.createElement(
+          'h5'
+        );
+
+      pageTitle.textContent =
+        `Страница ` +
+        `${pageItem.pageNumber} · ` +
+        `${pageItem.textLength} символов`;
+
+      const pageText =
+        document.createElement(
+          'pre'
+        );
+
+      pageText.textContent =
+        pageItem.text;
+
+      pageBlock.appendChild(
+        pageTitle
+      );
+
+      pageBlock.appendChild(
+        pageText
+      );
+
+      if (pageItem.truncated) {
+        const truncatedMessage =
+          document.createElement(
+            'p'
+          );
+
+        truncatedMessage.className =
+          'document-text-truncated';
+
+        truncatedMessage.textContent =
+          'Показаны первые 20 000 символов страницы.';
+
+        pageBlock.appendChild(
+          truncatedMessage
+        );
+      }
+
+      textDetails.appendChild(
+        pageBlock
+      );
+    });
+
+  main.appendChild(
+    textDetails
+  );
+}
 }
 
       const removeButton =
@@ -1787,6 +1882,8 @@ async function inspectPdfDocument(
 
     let pagesWithText = 0;
 
+const extractedPages = [];
+
     for (
       let pageNumber = 1;
       pageNumber <= pdfDocument.numPages;
@@ -1815,23 +1912,41 @@ async function inspectPdfDocument(
           ''
         ).length;
 
-      if (meaningfulTextLength >= 20) {
-        pagesWithText += 1;
-      }
+if (meaningfulTextLength >= 20) {
+  pagesWithText += 1;
+
+  extractedPages.push({
+    pageNumber,
+    textLength:
+      extractedText.length,
+    text:
+      extractedText.slice(
+        0,
+        20000
+      ),
+    truncated:
+      extractedText.length > 20000
+  });
+}
 
       page.cleanup();
     }
 
     return {
-      success: true,
-      fileName: documentItem.file.name,
-      totalPages: pdfDocument.numPages,
+  success: true,
+  fileName:
+    documentItem.file.name,
+  totalPages:
+    pdfDocument.numPages,
+  pagesWithText,
+  extractedPages,
+  pdfType:
+    getPdfTextLayerType(
       pagesWithText,
-      pdfType: getPdfTextLayerType(
-        pagesWithText,
-        pdfDocument.numPages
-      )
-    };
+      pdfDocument.numPages
+    )
+};
+    
   } catch (error) {
     console.error(
       'Ошибка диагностики PDF:',
