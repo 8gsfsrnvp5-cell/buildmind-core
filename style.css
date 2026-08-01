@@ -845,5 +845,31 @@ th { background: #f8fafc; color: #334155; white-space: nowrap; }
     width: 100%;
   }
 }
+/* Кнопки диагностики документов */
 
+.documents-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.documents-analyze-btn {
+  margin-top: 0;
+}
+
+.documents-message {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+@media (max-width: 600px) {
+  .documents-actions {
+    width: 100%;
+  }
+
+  .documents-actions button {
+    width: 100%;
+  }
+}
  
