@@ -219,12 +219,90 @@
     />
   </div>
 
-  <button id="recalcBtn" class="primary">
+   <button id="recalcBtn" class="primary">
     Пересчитать риски
   </button>
 </section>
 
- 
+<section
+  id="projectDocumentsSection"
+  class="card documents-card"
+>
+  <div class="documents-header">
+    <div>
+      <h2>Проектные документы и ГПР</h2>
+
+      <p class="muted">
+        Загрузите проектные PDF, спецификации,
+        ведомости материалов и график производства работ.
+        На следующем этапе BuildMind начнёт определять
+        тип документа и извлекать данные.
+      </p>
+    </div>
+
+    <span
+      id="documentsCount"
+      class="documents-count"
+    >
+      0 файлов
+    </span>
+  </div>
+
+  <div
+    id="documentsDropZone"
+    class="documents-drop-zone"
+    tabindex="0"
+  >
+    <input
+      id="projectDocumentsInput"
+      type="file"
+      accept=".pdf,.xlsx,.xls,.csv"
+      multiple
+      hidden
+    />
+
+    <button
+      type="button"
+      id="selectDocumentsBtn"
+      class="primary documents-select-btn"
+    >
+      Выбрать документы
+    </button>
+
+    <p>
+      или перетащите файлы в эту область
+    </p>
+
+    <small>
+      Поддерживаются PDF, XLSX, XLS и CSV.
+      Файлы пока не отправляются на сервер.
+    </small>
+  </div>
+
+  <div class="documents-toolbar">
+    <p
+      id="documentsMessage"
+      class="documents-message"
+    >
+      Файлы пока не выбраны.
+    </p>
+
+    <button
+      type="button"
+      id="clearDocumentsBtn"
+      class="secondary-btn"
+      disabled
+    >
+      Очистить список
+    </button>
+  </div>
+
+  <div
+    id="documentsList"
+    class="documents-list"
+  ></div>
+</section>
+
 <section class="card assistant-card">
   <h2>Командное окно BuildMind</h2>
   <p class="muted">
