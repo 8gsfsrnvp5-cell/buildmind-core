@@ -1597,6 +1597,138 @@ if (
     classificationBlock
   );
 }
+
+        if (
+  documentItem.analysis.success &&
+  Array.isArray(
+    documentItem.analysis
+      .materialCandidates
+  )
+) {
+  const candidates =
+    documentItem.analysis
+      .materialCandidates;
+
+  const candidatesBlock =
+    document.createElement('div');
+
+  candidatesBlock.className =
+    'document-material-candidates';
+
+  const candidatesTitle =
+    document.createElement('h5');
+
+  candidatesTitle.textContent =
+    'Кандидаты на материалы: ' +
+    candidates.length;
+
+  candidatesBlock.appendChild(
+    candidatesTitle
+  );
+
+  if (candidates.length === 0) {
+    const emptyCandidates =
+      document.createElement('p');
+
+    emptyCandidates.textContent =
+      'На доступных текстовых страницах позиции вида «материал — количество — единица» не найдены.';
+
+    candidatesBlock.appendChild(
+      emptyCandidates
+    );
+  } else {
+    const candidatesTable =
+      document.createElement('div');
+
+    candidatesTable.className =
+      'material-candidates-table';
+
+    candidates
+      .slice(0, 30)
+      .forEach(function (candidate) {
+        const candidateRow =
+          document.createElement('div');
+
+        candidateRow.className =
+          'material-candidate-row';
+
+        const candidateName =
+          document.createElement('strong');
+
+        candidateName.textContent =
+          candidate.name;
+
+        const candidateData =
+          document.createElement('span');
+
+        candidateData.textContent =
+          `${candidate.quantity} ` +
+          `${candidate.unit} · ` +
+          `страница ` +
+          `${candidate.pageNumber}`;
+
+        const candidateStatus =
+          document.createElement('small');
+
+        candidateStatus.textContent =
+          candidate.status;
+
+        candidateRow.appendChild(
+          candidateName
+        );
+
+        candidateRow.appendChild(
+          candidateData
+        );
+
+        candidateRow.appendChild(
+          candidateStatus
+        );
+
+        candidatesTable.appendChild(
+          candidateRow
+        );
+      });
+
+    candidatesBlock.appendChild(
+      candidatesTable
+    );
+
+    if (candidates.length > 30) {
+      const limitMessage =
+        document.createElement('small');
+
+      limitMessage.className =
+        'material-candidates-limit';
+
+      limitMessage.textContent =
+        `Показаны первые 30 из ` +
+        `${candidates.length} кандидатов.`;
+
+      candidatesBlock.appendChild(
+        limitMessage
+      );
+    }
+  }
+
+  const verificationWarning =
+    document.createElement('small');
+
+  verificationWarning.className =
+    'material-candidates-warning';
+
+  verificationWarning.textContent =
+    'Результаты сформированы автоматически. Перед использованием требуется проверка инженером.';
+
+  candidatesBlock.appendChild(
+    verificationWarning
+  );
+
+  main.appendChild(
+    candidatesBlock
+  );
+}
+        
         if (
   documentItem.analysis.success &&
   Array.isArray(
@@ -2257,6 +2389,162 @@ function classifyProjectDocument(
   };
 }
 
+/* ==================================================
+   КАНДИДАТЫ НА МАТЕРИАЛЫ ИЗ PDF
+   ================================================== */
+
+function normalizeMaterialCandidateName(
+  value
+) {
+  const cleanedValue =
+    String(value || '')
+      .replace(/\s+/g, ' ')
+      .replace(
+        /^[\d\s.,;:№\-–—]+/,
+        ''
+      )
+      .trim();
+
+  const words =
+    cleanedValue.split(' ');
+
+  return words
+    .slice(-10)
+    .join(' ')
+    .replace(
+      /^(позиция|поз\.?|наименование|материал|оборудование)\s+/i,
+      ''
+    )
+    .trim();
+}
+
+function normalizeMaterialCandidateUnit(
+  value
+) {
+  const normalized =
+    String(value || '')
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/\.$/, '');
+
+  const units = {
+    шт: 'шт',
+    штук: 'шт',
+    м: 'м',
+    'п.м': 'п.м.',
+    'пм': 'п.м.',
+    'м²': 'м²',
+    'м2': 'м²',
+    'м³': 'м³',
+    'м3': 'м³',
+    кг: 'кг',
+    т: 'т',
+    л: 'л',
+    компл: 'компл.',
+    комплект: 'компл.',
+    упак: 'упак.',
+    упаковка: 'упак.',
+    рул: 'рул.',
+    рулон: 'рул.'
+  };
+
+  return units[normalized] || normalized;
+}
+
+function extractMaterialCandidates(
+  extractedPages
+) {
+  const pages =
+    Array.isArray(extractedPages)
+      ? extractedPages
+      : [];
+
+  const candidates = [];
+
+  const materialPattern =
+    /([А-ЯA-ZЁ][А-Яа-яA-Za-zЁё0-9«»"'()\/.,+\-–—×xХ\s]{2,120}?)\s+(\d+(?:[.,]\d+)?)\s*(шт\.?|штук|п\.?\s*м\.?|м²|м2|м³|м3|м|кг|т|л|компл\.?|комплект|упак\.?|упаковка|рул\.?|рулон)\b/giu;
+
+  pages.forEach(function (pageItem) {
+    const pageText =
+      String(pageItem.text || '');
+
+    let match = null;
+
+    while (
+      (
+        match =
+          materialPattern.exec(
+            pageText
+          )
+      ) !== null
+    ) {
+      const name =
+        normalizeMaterialCandidateName(
+          match[1]
+        );
+
+      const quantity =
+        Number(
+          String(match[2])
+            .replace(',', '.')
+        );
+
+      const unit =
+        normalizeMaterialCandidateUnit(
+          match[3]
+        );
+
+      if (
+        !name ||
+        name.length < 3 ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+      ) {
+        continue;
+      }
+
+      const duplicate =
+        candidates.some(
+          function (candidate) {
+            return (
+              candidate.pageNumber ===
+                pageItem.pageNumber &&
+              candidate.name
+                .toLowerCase() ===
+                name.toLowerCase() &&
+              candidate.quantity ===
+                quantity &&
+              candidate.unit === unit
+            );
+          }
+        );
+
+      if (!duplicate) {
+        candidates.push({
+          id:
+            'material-candidate-' +
+            pageItem.pageNumber +
+            '-' +
+            candidates.length,
+          name,
+          quantity,
+          unit,
+          pageNumber:
+            pageItem.pageNumber,
+          status:
+            'Требует проверки'
+        });
+      }
+
+      if (candidates.length >= 100) {
+        return;
+      }
+    }
+  });
+
+  return candidates;
+}
+
 async function inspectPdfDocument(
   documentItem
 ) {
@@ -2330,6 +2618,11 @@ const documentClassification =
   classifyProjectDocument(
     extractedPages
   );
+
+    const materialCandidates =
+  extractMaterialCandidates(
+    extractedPages
+  );
     
     return {
   success: true,
@@ -2340,6 +2633,7 @@ const documentClassification =
  pagesWithText,
 extractedPages,
 documentClassification,
+materialCandidates,
 pdfType:
     getPdfTextLayerType(
       pagesWithText,
