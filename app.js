@@ -2546,14 +2546,18 @@ function normalizeMaterialCandidateName(
   const words =
     cleanedValue.split(' ');
 
-  return words
-    .slice(-10)
-    .join(' ')
-    .replace(
-      /^(позиция|поз\.?|наименование|материал|оборудование)\s+/i,
-      ''
-    )
-    .trim();
+ return words
+  .slice(-10)
+  .join(' ')
+  .replace(
+    /^(позиция|поз\.?|наименование|материал|оборудование)\s+/i,
+    ''
+  )
+  .replace(
+    /\s*[-–—:;,.]+\s*$/g,
+    ''
+  )
+  .trim();
 }
 
 function normalizeMaterialCandidateUnit(
