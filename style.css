@@ -1082,3 +1082,94 @@ th { background: #f8fafc; color: #334155; white-space: nowrap; }
     white-space: normal;
   }
 }
+
+/* ==================================================
+   ИНЖЕНЕРНАЯ ПРОВЕРКА КАНДИДАТОВ
+   ================================================== */
+
+.material-candidate-row {
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto
+    auto
+    auto;
+}
+
+.material-candidate-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.material-candidate-actions button {
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.material-candidate-confirm {
+  border: 1px solid #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.material-candidate-confirm:hover {
+  background: #bbf7d0;
+}
+
+.material-candidate-reject {
+  border: 1px solid #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.material-candidate-reject:hover {
+  background: #fecaca;
+}
+
+.material-candidate-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.material-candidate-row
+.material-candidate-status-confirmed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.material-candidate-row
+.material-candidate-status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.material-candidate-row
+.material-candidate-status-pending {
+  background: #fff4d6;
+  color: #8a5a00;
+}
+
+.material-candidate-confirmed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.material-candidate-rejected {
+  border-color: #fca5a5;
+  background: #fff7f7;
+  opacity: 0.75;
+}
+
+@media (max-width: 900px) {
+  .material-candidate-row {
+    grid-template-columns: 1fr;
+  }
+
+  .material-candidate-actions {
+    width: 100%;
+  }
+
+  .material-candidate-actions button {
+    flex: 1;
+  }
+}
