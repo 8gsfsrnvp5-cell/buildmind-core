@@ -1040,6 +1040,9 @@ function addMaterial() {
     return;
   }
 
+  const importSource =
+  pendingMaterialCandidateImport;
+
   materials.push({
     project,
     object,
@@ -1051,13 +1054,54 @@ function addMaterial() {
     stock: Number(document.getElementById('newStock').value || 0),
     reserved: Number(document.getElementById('newReserved').value || 0),
     confirmed: Number(document.getElementById('newConfirmed').value || 0),
-    deliveryDate: document.getElementById('newDelivery').value,
-    leadDays: Number(document.getElementById('newLead').value || 1)
+    deliveryDate:
+  document.getElementById(
+    'newDelivery'
+  ).value,
+
+leadDays:
+  Number(
+    document.getElementById(
+      'newLead'
+    ).value || 1
+  ),
+
+sourceType:
+  importSource
+    ? 'pdf-candidate'
+    : 'manual',
+
+sourceDocument:
+  importSource
+    ? importSource.fileName
+    : '',
+
+sourcePage:
+  importSource
+    ? importSource.candidate.pageNumber
+    : null,
+
+sourceReviewStatus:
+  importSource
+    ? 'confirmed-by-engineer'
+    : ''
   });
 
-  saveMaterials();
-  clearAddForm();
-  render();
+  if (importSource) {
+  importSource.candidate.transferStatus =
+    'transferred';
+
+  importSource.candidate.status =
+    'Перенесено в материалы';
+
+  pendingMaterialCandidateImport =
+    null;
+}
+  
+ saveMaterials();
+clearAddForm();
+render();
+renderProjectDocuments();
 }
 
 function deleteMaterial(index) {
