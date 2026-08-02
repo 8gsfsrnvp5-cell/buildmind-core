@@ -1616,11 +1616,32 @@ if (
     'document-material-candidates';
 
   const candidatesTitle =
-    document.createElement('h5');
+  document.createElement('h5');
 
-  candidatesTitle.textContent =
-    'Кандидаты на материалы: ' +
-    candidates.length;
+const confirmedCandidates =
+  candidates.filter(
+    function (candidate) {
+      return (
+        candidate.reviewStatus ===
+        'confirmed'
+      );
+    }
+  ).length;
+
+const rejectedCandidates =
+  candidates.filter(
+    function (candidate) {
+      return (
+        candidate.reviewStatus ===
+        'rejected'
+      );
+    }
+  ).length;
+
+candidatesTitle.textContent =
+  `Кандидаты: ${candidates.length} · ` +
+  `подтверждено: ${confirmedCandidates} · ` +
+  `отклонено: ${rejectedCandidates}`;
 
   candidatesBlock.appendChild(
     candidatesTitle
@@ -1668,26 +1689,143 @@ if (
           `${candidate.pageNumber}`;
 
         const candidateStatus =
-          document.createElement('small');
+  document.createElement('small');
 
-        candidateStatus.textContent =
-          candidate.status;
+candidateStatus.className =
+  'material-candidate-status';
 
-        candidateRow.appendChild(
-          candidateName
-        );
+if (
+  candidate.reviewStatus ===
+  'confirmed'
+) {
+  candidateStatus.textContent =
+    'Подтверждено инженером';
 
-        candidateRow.appendChild(
-          candidateData
-        );
+  candidateStatus.classList.add(
+    'material-candidate-status-confirmed'
+  );
+} else if (
+  candidate.reviewStatus ===
+  'rejected'
+) {
+  candidateStatus.textContent =
+    'Отклонено инженером';
 
-        candidateRow.appendChild(
-          candidateStatus
-        );
+  candidateStatus.classList.add(
+    'material-candidate-status-rejected'
+  );
+} else {
+  candidateStatus.textContent =
+    'Требует проверки';
 
-        candidatesTable.appendChild(
-          candidateRow
-        );
+  candidateStatus.classList.add(
+    'material-candidate-status-pending'
+  );
+}
+
+       const candidateActions =
+  document.createElement('div');
+
+candidateActions.className =
+  'material-candidate-actions';
+
+const confirmCandidateButton =
+  document.createElement('button');
+
+confirmCandidateButton.type =
+  'button';
+
+confirmCandidateButton.className =
+  'material-candidate-confirm';
+
+confirmCandidateButton.textContent =
+  'Подтвердить';
+
+confirmCandidateButton.disabled =
+  candidate.reviewStatus ===
+  'confirmed';
+
+confirmCandidateButton.addEventListener(
+  'click',
+  function () {
+    candidate.reviewStatus =
+      'confirmed';
+
+    candidate.status =
+      'Подтверждено инженером';
+
+    renderProjectDocuments();
+  }
+);
+
+const rejectCandidateButton =
+  document.createElement('button');
+
+rejectCandidateButton.type =
+  'button';
+
+rejectCandidateButton.className =
+  'material-candidate-reject';
+
+rejectCandidateButton.textContent =
+  'Отклонить';
+
+rejectCandidateButton.disabled =
+  candidate.reviewStatus ===
+  'rejected';
+
+rejectCandidateButton.addEventListener(
+  'click',
+  function () {
+    candidate.reviewStatus =
+      'rejected';
+
+    candidate.status =
+      'Отклонено инженером';
+
+    renderProjectDocuments();
+  }
+);
+
+candidateActions.appendChild(
+  confirmCandidateButton
+);
+
+candidateActions.appendChild(
+  rejectCandidateButton
+);
+
+candidateRow.classList.toggle(
+  'material-candidate-confirmed',
+  candidate.reviewStatus ===
+    'confirmed'
+);
+
+candidateRow.classList.toggle(
+  'material-candidate-rejected',
+  candidate.reviewStatus ===
+    'rejected'
+);
+
+candidateRow.appendChild(
+  candidateName
+);
+
+candidateRow.appendChild(
+  candidateData
+);
+
+candidateRow.appendChild(
+  candidateStatus
+);
+
+candidateRow.appendChild(
+  candidateActions
+);
+
+candidatesTable.appendChild(
+  candidateRow
+);
       });
 
     candidatesBlock.appendChild(
@@ -2532,7 +2670,9 @@ function extractMaterialCandidates(
           pageNumber:
             pageItem.pageNumber,
           status:
-            'Требует проверки'
+  'Требует проверки',
+reviewStatus:
+  'pending'
         });
       }
 
