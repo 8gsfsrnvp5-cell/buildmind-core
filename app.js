@@ -1253,6 +1253,175 @@ window.clearBuildMindAssistant = clearBuildMindAssistant;
 
 let uploadedProjectDocuments = [];
 
+let pendingMaterialCandidateImport =
+  null;
+
+function prepareMaterialCandidateImport(
+  documentItem,
+  candidate
+) {
+  const projectInput =
+    document.getElementById(
+      'newProject'
+    );
+
+  const objectInput =
+    document.getElementById(
+      'newObject'
+    );
+
+  const workInput =
+    document.getElementById(
+      'newWork'
+    );
+
+  const nameInput =
+    document.getElementById(
+      'newName'
+    );
+
+  const responsibleInput =
+    document.getElementById(
+      'newResponsible'
+    );
+
+  const needInput =
+    document.getElementById(
+      'newNeed'
+    );
+
+  const unitInput =
+    document.getElementById(
+      'newUnit'
+    );
+
+  if (
+    !nameInput ||
+    !needInput ||
+    !unitInput
+  ) {
+    alert(
+      'Форма добавления материала не найдена.'
+    );
+
+    return;
+  }
+
+  const alreadyTransferred =
+    materials.some(function (row) {
+      return (
+        row.sourceDocument ===
+          documentItem.file.name &&
+        Number(row.sourcePage) ===
+          Number(
+            candidate.pageNumber
+          ) &&
+        normalizeControlValue(
+          row.name
+        ) ===
+          normalizeControlValue(
+            candidate.name
+          )
+      );
+    });
+
+  if (alreadyTransferred) {
+    candidate.transferStatus =
+      'transferred';
+
+    candidate.status =
+      'Перенесено в материалы';
+
+    renderProjectDocuments();
+
+    alert(
+      'Эта позиция уже находится в таблице материалов.'
+    );
+
+    return;
+  }
+
+  const projectHeader =
+    document.getElementById(
+      'projectName'
+    );
+
+  const objectHeader =
+    document.getElementById(
+      'objectName'
+    );
+
+  const workHeader =
+    document.getElementById(
+      'workName'
+    );
+
+  if (
+    projectInput &&
+    projectHeader &&
+    projectHeader.value.trim()
+  ) {
+    projectInput.value =
+      projectHeader.value.trim();
+  }
+
+  if (
+    objectInput &&
+    objectHeader &&
+    objectHeader.value.trim()
+  ) {
+    objectInput.value =
+      objectHeader.value.trim();
+  }
+
+  if (
+    workInput &&
+    workHeader &&
+    workHeader.value.trim()
+  ) {
+    workInput.value =
+      workHeader.value.trim();
+  }
+
+  nameInput.value =
+    candidate.name;
+
+  needInput.value =
+    String(candidate.quantity);
+
+  unitInput.value =
+    candidate.unit;
+
+  if (responsibleInput) {
+    responsibleInput.value = '';
+  }
+
+  pendingMaterialCandidateImport = {
+    candidate,
+    fileName:
+      documentItem.file.name
+  };
+
+  const message =
+    document.getElementById(
+      'documentsMessage'
+    );
+
+  if (message) {
+    message.textContent =
+      'Кандидат подготовлен к переносу. ' +
+      'Проверьте форму материала, ' +
+      'назначьте ответственного и нажмите «Добавить материал».';
+  }
+
+  nameInput.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center'
+  });
+
+  nameInput.focus();
+}
+
 function getProjectDocumentId(file) {
   return [
     file.name,
@@ -1695,6 +1864,16 @@ candidateStatus.className =
   'material-candidate-status';
 
 if (
+  candidate.transferStatus ===
+  'transferred'
+) {
+  candidateStatus.textContent =
+    'Перенесено в материалы';
+
+  candidateStatus.classList.add(
+    'material-candidate-status-transferred'
+  );
+} else if (
   candidate.reviewStatus ===
   'confirmed'
 ) {
@@ -1795,6 +1974,41 @@ candidateActions.appendChild(
   rejectCandidateButton
 );
 
+        const transferCandidateButton =
+  document.createElement('button');
+
+transferCandidateButton.type =
+  'button';
+
+transferCandidateButton.className =
+  'material-candidate-transfer';
+
+transferCandidateButton.textContent =
+  candidate.transferStatus ===
+    'transferred'
+    ? 'Перенесено'
+    : 'В материалы';
+
+transferCandidateButton.disabled =
+  candidate.reviewStatus !==
+    'confirmed' ||
+  candidate.transferStatus ===
+    'transferred';
+
+transferCandidateButton.addEventListener(
+  'click',
+  function () {
+    prepareMaterialCandidateImport(
+      documentItem,
+      candidate
+    );
+  }
+);
+
+candidateActions.appendChild(
+  transferCandidateButton
+);
+
 candidateRow.classList.toggle(
   'material-candidate-confirmed',
   candidate.reviewStatus ===
@@ -1805,6 +2019,12 @@ candidateRow.classList.toggle(
   'material-candidate-rejected',
   candidate.reviewStatus ===
     'rejected'
+);
+
+candidateRow.classList.toggle(
+  'material-candidate-transferred',
+  candidate.transferStatus ===
+    'transferred'
 );
 
 candidateRow.appendChild(
