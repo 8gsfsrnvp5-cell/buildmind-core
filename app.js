@@ -994,12 +994,31 @@ const risk =
     if (risk.level === 'warning') warning++;
     if (risk.level === 'ok') ok++;
 
+const sourceNote =
+  row.sourceDocument
+    ? (
+        '<div class="material-source-note">' +
+        'Источник: ' +
+        escapeControlHtml(
+          row.sourceDocument
+        ) +
+        ', стр. ' +
+        escapeControlHtml(
+          row.sourcePage || '—'
+        ) +
+        '</div>'
+      )
+    : '';
+    
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${row.project || '—'}</td>
       <td>${row.object || '—'}</td>
       <td>${row.work || '—'}</td>
-      <td>${row.name}</td>
+      <td>
+      ${escapeControlHtml(row.name)}
+      ${sourceNote}
+      </td>
       <td>${row.responsible || '—'}</td>
       <td>${row.need}</td>
       <td>${row.unit}</td>
