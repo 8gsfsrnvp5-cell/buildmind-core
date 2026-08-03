@@ -1850,12 +1850,26 @@ if (
   const candidatesTitle =
   document.createElement('h5');
 
+const pendingCandidates =
+  candidates.filter(
+    function (candidate) {
+      return (
+        candidate.reviewStatus ===
+          'pending' &&
+        candidate.transferStatus !==
+          'transferred'
+      );
+    }
+  ).length;
+
 const confirmedCandidates =
   candidates.filter(
     function (candidate) {
       return (
         candidate.reviewStatus ===
-        'confirmed'
+          'confirmed' &&
+        candidate.transferStatus !==
+          'transferred'
       );
     }
   ).length;
@@ -1865,16 +1879,29 @@ const rejectedCandidates =
     function (candidate) {
       return (
         candidate.reviewStatus ===
-        'rejected'
+          'rejected' &&
+        candidate.transferStatus !==
+          'transferred'
+      );
+    }
+  ).length;
+
+const transferredCandidates =
+  candidates.filter(
+    function (candidate) {
+      return (
+        candidate.transferStatus ===
+        'transferred'
       );
     }
   ).length;
 
 candidatesTitle.textContent =
   `Кандидаты: ${candidates.length} · ` +
+  `ожидают: ${pendingCandidates} · ` +
   `подтверждено: ${confirmedCandidates} · ` +
-  `отклонено: ${rejectedCandidates}`;
-
+  `отклонено: ${rejectedCandidates} · ` +
+  `перенесено: ${transferredCandidates}`;
   candidatesBlock.appendChild(
     candidatesTitle
   );
@@ -1985,13 +2012,22 @@ confirmCandidateButton.textContent =
 
 confirmCandidateButton.disabled =
   candidate.reviewStatus ===
-  'confirmed';
+    'confirmed' ||
+  candidate.transferStatus ===
+    'transferred';
 
 confirmCandidateButton.addEventListener(
   'click',
   function () {
-    candidate.reviewStatus =
-      'confirmed';
+  if (
+    candidate.transferStatus ===
+    'transferred'
+  ) {
+    return;
+  }
+
+  candidate.reviewStatus =
+    'confirmed';
 
     candidate.status =
       'Подтверждено инженером';
@@ -2014,11 +2050,20 @@ rejectCandidateButton.textContent =
 
 rejectCandidateButton.disabled =
   candidate.reviewStatus ===
-  'rejected';
+    'rejected' ||
+  candidate.transferStatus ===
+    'transferred';
 
 rejectCandidateButton.addEventListener(
   'click',
   function () {
+    if (
+      candidate.transferStatus ===
+      'transferred'
+    ) {
+      return;
+    }
+
     candidate.reviewStatus =
       'rejected';
 
