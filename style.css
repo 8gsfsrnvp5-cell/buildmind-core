@@ -1173,3 +1173,44 @@ th { background: #f8fafc; color: #334155; white-space: nowrap; }
     flex: 1;
   }
 }
+/* ==================================================
+   ПЕРЕНОС КАНДИДАТА В МАТЕРИАЛЫ
+   ================================================== */
+
+.material-candidate-transfer {
+  border: 1px solid #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.material-candidate-transfer:hover:not(:disabled) {
+  background: #bfdbfe;
+}
+
+.material-candidate-row
+.material-candidate-status-transferred {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.material-candidate-transferred {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.material-candidate-transferred strong {
+  color: #1e40af;
+}
+
+.material-candidate-transferred
+.material-candidate-actions button {
+  cursor: not-allowed;
+}
+
+.material-source-note {
+  margin-top: 5px;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
