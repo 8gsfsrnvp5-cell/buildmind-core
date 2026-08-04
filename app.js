@@ -1384,8 +1384,7 @@ function getMaterialCandidateReviewKey(
 
   return [
     file ? file.name : '',
-    file ? file.size : 0,
-    file ? file.lastModified : 0,
+    file ? Number(file.size) || 0 : 0,
     Number(candidate.pageNumber) || 0,
     normalizeControlValue(
       candidate.name
@@ -1395,6 +1394,84 @@ function getMaterialCandidateReviewKey(
       candidate.unit
     )
   ].join('|');
+}
+
+function findSavedMaterialCandidateReview(
+  documentItem,
+  candidate
+) {
+  const stableKey =
+    getMaterialCandidateReviewKey(
+      documentItem,
+      candidate
+    );
+
+  const stableReview =
+    materialCandidateReviews[
+      stableKey
+    ];
+
+  if (stableReview) {
+    return {
+      key: stableKey,
+      review: stableReview
+    };
+  }
+
+  const file =
+    documentItem &&
+    documentItem.file
+      ? documentItem.file
+      : null;
+
+  if (!file) {
+    return null;
+  }
+
+  const legacyPrefix =
+    [
+      file.name,
+      Number(file.size) || 0
+    ].join('|') + '|';
+
+  const legacySuffix =
+    '|' +
+    [
+      Number(candidate.pageNumber) || 0,
+      normalizeControlValue(
+        candidate.name
+      ),
+      Number(candidate.quantity) || 0,
+      normalizeControlValue(
+        candidate.unit
+      )
+    ].join('|');
+
+  const legacyKey =
+    Object.keys(
+      materialCandidateReviews
+    ).find(function (savedKey) {
+      return (
+        savedKey.startsWith(
+          legacyPrefix
+        ) &&
+        savedKey.endsWith(
+          legacySuffix
+        )
+      );
+    });
+
+  if (!legacyKey) {
+    return null;
+  }
+
+  return {
+    key: legacyKey,
+    review:
+      materialCandidateReviews[
+        legacyKey
+      ]
+  };
 }
 
 function rememberMaterialCandidateReview(
@@ -1496,20 +1573,18 @@ function applySavedMaterialCandidateReview(
     return candidate;
   }
 
-  const reviewKey =
-    getMaterialCandidateReviewKey(
+  const savedResult =
+    findSavedMaterialCandidateReview(
       documentItem,
       candidate
     );
 
-  const savedReview =
-    materialCandidateReviews[
-      reviewKey
-    ];
-
-  if (!savedReview) {
+  if (!savedResult) {
     return candidate;
   }
+
+  const savedReview =
+    savedResult.review;
 
   candidate.reviewStatus =
     savedReview.reviewStatus ||
@@ -1522,6 +1597,22 @@ function applySavedMaterialCandidateReview(
   candidate.status =
     savedReview.status ||
     'Требует проверки';
+
+  const stableKey =
+    getMaterialCandidateReviewKey(
+      documentItem,
+      candidate
+    );
+
+  if (
+    savedResult.key !==
+    stableKey
+  ) {
+    rememberMaterialCandidateReview(
+      documentItem,
+      candidate
+    );
+  }
 
   return candidate;
 }
