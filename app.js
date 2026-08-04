@@ -1113,6 +1113,11 @@ sourceReviewStatus:
   importSource.candidate.status =
     'Перенесено в материалы';
 
+  rememberMaterialCandidateReview(
+    importSource.documentItem,
+    importSource.candidate
+  );
+
   pendingMaterialCandidateImport =
     null;
 }
@@ -1314,6 +1319,213 @@ window.clearBuildMindAssistant = clearBuildMindAssistant;
    ПРОЕКТНЫЕ ДОКУМЕНТЫ И ГПР
    ================================================== */
 
+const MATERIAL_CANDIDATE_REVIEWS_KEY =
+  'buildmind-material-candidate-reviews-v1';
+
+function loadMaterialCandidateReviews() {
+  try {
+    const savedReviews =
+      localStorage.getItem(
+        MATERIAL_CANDIDATE_REVIEWS_KEY
+      );
+
+    if (!savedReviews) {
+      return {};
+    }
+
+    const parsedReviews =
+      JSON.parse(savedReviews);
+
+    return (
+      parsedReviews &&
+      typeof parsedReviews === 'object' &&
+      !Array.isArray(parsedReviews)
+        ? parsedReviews
+        : {}
+    );
+  } catch (error) {
+    console.warn(
+      'Не удалось прочитать решения по кандидатам PDF:',
+      error
+    );
+
+    return {};
+  }
+}
+
+let materialCandidateReviews =
+  loadMaterialCandidateReviews();
+
+function saveMaterialCandidateReviews() {
+  try {
+    localStorage.setItem(
+      MATERIAL_CANDIDATE_REVIEWS_KEY,
+      JSON.stringify(
+        materialCandidateReviews
+      )
+    );
+  } catch (error) {
+    console.warn(
+      'Не удалось сохранить решения по кандидатам PDF:',
+      error
+    );
+  }
+}
+
+function getMaterialCandidateReviewKey(
+  documentItem,
+  candidate
+) {
+  const file =
+    documentItem &&
+    documentItem.file
+      ? documentItem.file
+      : null;
+
+  return [
+    file ? file.name : '',
+    file ? file.size : 0,
+    file ? file.lastModified : 0,
+    Number(candidate.pageNumber) || 0,
+    normalizeControlValue(
+      candidate.name
+    ),
+    Number(candidate.quantity) || 0,
+    normalizeControlValue(
+      candidate.unit
+    )
+  ].join('|');
+}
+
+function rememberMaterialCandidateReview(
+  documentItem,
+  candidate
+) {
+  if (
+    !documentItem ||
+    !documentItem.file ||
+    !candidate
+  ) {
+    return;
+  }
+
+  const reviewKey =
+    getMaterialCandidateReviewKey(
+      documentItem,
+      candidate
+    );
+
+  materialCandidateReviews[
+    reviewKey
+  ] = {
+    reviewStatus:
+      candidate.reviewStatus ||
+      'pending',
+
+    transferStatus:
+      candidate.transferStatus ||
+      '',
+
+    status:
+      candidate.status ||
+      'Требует проверки',
+
+    updatedAt:
+      new Date().toISOString()
+  };
+
+  saveMaterialCandidateReviews();
+}
+
+function materialCandidateAlreadyTransferred(
+  documentItem,
+  candidate
+) {
+  if (
+    !documentItem ||
+    !documentItem.file ||
+    !candidate
+  ) {
+    return false;
+  }
+
+  return materials.some(
+    function (row) {
+      return (
+        row.sourceDocument ===
+          documentItem.file.name &&
+        Number(row.sourcePage) ===
+          Number(
+            candidate.pageNumber
+          ) &&
+        normalizeControlValue(
+          row.name
+        ) ===
+          normalizeControlValue(
+            candidate.name
+          )
+      );
+    }
+  );
+}
+
+function applySavedMaterialCandidateReview(
+  documentItem,
+  candidate
+) {
+  if (
+    materialCandidateAlreadyTransferred(
+      documentItem,
+      candidate
+    )
+  ) {
+    candidate.reviewStatus =
+      'confirmed';
+
+    candidate.transferStatus =
+      'transferred';
+
+    candidate.status =
+      'Перенесено в материалы';
+
+    rememberMaterialCandidateReview(
+      documentItem,
+      candidate
+    );
+
+    return candidate;
+  }
+
+  const reviewKey =
+    getMaterialCandidateReviewKey(
+      documentItem,
+      candidate
+    );
+
+  const savedReview =
+    materialCandidateReviews[
+      reviewKey
+    ];
+
+  if (!savedReview) {
+    return candidate;
+  }
+
+  candidate.reviewStatus =
+    savedReview.reviewStatus ||
+    'pending';
+
+  candidate.transferStatus =
+    savedReview.transferStatus ||
+    '';
+
+  candidate.status =
+    savedReview.status ||
+    'Требует проверки';
+
+  return candidate;
+}
+
 let uploadedProjectDocuments = [];
 
 let pendingMaterialCandidateImport =
@@ -1371,31 +1583,24 @@ function prepareMaterialCandidateImport(
   }
 
   const alreadyTransferred =
-    materials.some(function (row) {
-      return (
-        row.sourceDocument ===
-          documentItem.file.name &&
-        Number(row.sourcePage) ===
-          Number(
-            candidate.pageNumber
-          ) &&
-        normalizeControlValue(
-          row.name
-        ) ===
-          normalizeControlValue(
-            candidate.name
-          )
-      );
-    });
+  materialCandidateAlreadyTransferred(
+    documentItem,
+    candidate
+  );
 
-  if (alreadyTransferred) {
-    candidate.transferStatus =
-      'transferred';
+ if (alreadyTransferred) {
+  candidate.transferStatus =
+    'transferred';
 
-    candidate.status =
-      'Перенесено в материалы';
+  candidate.status =
+    'Перенесено в материалы';
 
-    renderProjectDocuments();
+  rememberMaterialCandidateReview(
+    documentItem,
+    candidate
+  );
+
+  renderProjectDocuments();
 
     alert(
       'Эта позиция уже находится в таблице материалов.'
@@ -1460,10 +1665,11 @@ function prepareMaterialCandidateImport(
   }
 
   pendingMaterialCandidateImport = {
-    candidate,
-    fileName:
-      documentItem.file.name
-  };
+  candidate,
+  documentItem,
+  fileName:
+    documentItem.file.name
+};
 
   const message =
     document.getElementById(
@@ -2030,9 +2236,14 @@ confirmCandidateButton.addEventListener(
     'confirmed';
 
     candidate.status =
-      'Подтверждено инженером';
+  'Подтверждено инженером';
 
-    renderProjectDocuments();
+rememberMaterialCandidateReview(
+  documentItem,
+  candidate
+);
+
+renderProjectDocuments();
   }
 );
 
@@ -2068,9 +2279,14 @@ rejectCandidateButton.addEventListener(
       'rejected';
 
     candidate.status =
-      'Отклонено инженером';
+  'Отклонено инженером';
 
-    renderProjectDocuments();
+rememberMaterialCandidateReview(
+  documentItem,
+  candidate
+);
+
+renderProjectDocuments();
   }
 );
 
@@ -3094,7 +3310,12 @@ const documentClassification =
     const materialCandidates =
   extractMaterialCandidates(
     extractedPages
-  );
+  ).map(function (candidate) {
+    return applySavedMaterialCandidateReview(
+      documentItem,
+      candidate
+    );
+  });
     
     return {
   success: true,
