@@ -1395,6 +1395,27 @@ function getMaterialCandidateReviewKey(
     )
   ].join('|');
 }
+
+function findSavedMaterialCandidateReview(
+  documentItem,
+  candidate
+) {
+  const stableKey =
+    getMaterialCandidateReviewKey(
+      documentItem,
+      candidate
+    );
+
+  const stableReview =
+    materialCandidateReviews[
+      stableKey
+    ];
+
+  if (stableReview) {
+    return {
+      key: stableKey,
+      review: stableReview
+    };
   }
 
   const file =
