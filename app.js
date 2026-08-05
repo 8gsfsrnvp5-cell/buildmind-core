@@ -1395,27 +1395,6 @@ function getMaterialCandidateReviewKey(
     )
   ].join('|');
 }
-
-function findSavedMaterialCandidateReview(
-  documentItem,
-  candidate
-) {
-  const stableKey =
-    getMaterialCandidateReviewKey(
-      documentItem,
-      candidate
-    );
-
-  const stableReview =
-    materialCandidateReviews[
-      stableKey
-    ];
-
-  if (stableReview) {
-    return {
-      key: stableKey,
-      review: stableReview
-    };
   }
 
   const file =
@@ -1650,94 +1629,6 @@ function applySavedMaterialCandidateReview(
 
     return candidate;
   }
-
-  const savedResult =
-    findSavedMaterialCandidateReview(
-      documentItem,
-      candidate
-    );
-
-  if (!savedResult) {
-    return candidate;
-  }
-
-  const savedReview =
-    savedResult.review;
-
-  candidate.reviewStatus =
-    savedReview.reviewStatus ||
-    'pending';
-
-  candidate.transferStatus =
-    savedReview.transferStatus ||
-    '';
-
-  candidate.status =
-    savedReview.status ||
-    'Требует проверки';
-
-  const stableKey =
-    getMaterialCandidateReviewKey(
-      documentItem,
-      candidate
-    );
-
-  if (
-    savedResult.key !==
-    stableKey
-  ) {
-    rememberMaterialCandidateReview(
-      documentItem,
-      candidate
-    );
-  }
-
-  return candidate;
-}
-
-  const savedResult =
-    findSavedMaterialCandidateReview(
-      documentItem,
-      candidate
-    );
-
-  if (!savedResult) {
-    return candidate;
-  }
-
-  const savedReview =
-    savedResult.review;
-
-  candidate.reviewStatus =
-    savedReview.reviewStatus ||
-    'pending';
-
-  candidate.transferStatus =
-    savedReview.transferStatus ||
-    '';
-
-  candidate.status =
-    savedReview.status ||
-    'Требует проверки';
-
-  const stableKey =
-    getMaterialCandidateReviewKey(
-      documentItem,
-      candidate
-    );
-
-  if (
-    savedResult.key !==
-    stableKey
-  ) {
-    rememberMaterialCandidateReview(
-      documentItem,
-      candidate
-    );
-  }
-
-  return candidate;
-}
 
 let uploadedProjectDocuments = [];
 
