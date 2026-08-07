@@ -263,7 +263,7 @@ function calculateWorkMatcherScore(
            считаем совпадение по основам слов.
       */
 
-      else {
+           else {
         const queryRoots =
           getWorkMatcherRoots(
             normalizedQuery
@@ -274,30 +274,52 @@ function calculateWorkMatcherScore(
             normalizedCandidate
           );
 
-        const matchedRoots =
-          queryRoots.filter(
-            function (queryRoot) {
-              return candidateRoots.some(
+        function rootsMatch(
+          firstRoot,
+          secondRoot
+        ) {
+          return (
+            firstRoot ===
+              secondRoot ||
+            (
+              firstRoot.length >= 4 &&
+              secondRoot.length >= 4 &&
+              (
+                firstRoot.startsWith(
+                  secondRoot
+                ) ||
+                secondRoot.startsWith(
+                  firstRoot
+                )
+              )
+            )
+          );
+        }
+
+        /*
+          Считаем, сколько основ
+          типового названия присутствуют
+          в реальном названии работы.
+
+          Это позволяет понимать склонения:
+
+          подземная → подземной
+          кабельная → кабельной
+          канализация → канализации
+        */
+
+        const matchedCandidateRoots =
+          candidateRoots.filter(
+            function (
+              candidateRoot
+            ) {
+              return queryRoots.some(
                 function (
-                  candidateRoot
+                  queryRoot
                 ) {
-                  return (
-                    queryRoot ===
-                      candidateRoot ||
-                    (
-                      queryRoot.length >=
-                        4 &&
-                      candidateRoot.length >=
-                        4 &&
-                      (
-                        queryRoot.startsWith(
-                          candidateRoot
-                        ) ||
-                        candidateRoot.startsWith(
-                          queryRoot
-                        )
-                      )
-                    )
+                  return rootsMatch(
+                    queryRoot,
+                    candidateRoot
                   );
                 }
               );
@@ -307,48 +329,83 @@ function calculateWorkMatcherScore(
         const uniqueMatchedRoots =
           Array.from(
             new Set(
-              matchedRoots
+              matchedCandidateRoots
             )
+          );
+
+        const candidateCoverage =
+          uniqueMatchedRoots.length /
+          Math.max(
+            1,
+            candidateRoots.length
+          );
+
+        const queryCoverage =
+          uniqueMatchedRoots.length /
+          Math.max(
+            1,
+            queryRoots.length
           );
 
         /*
-          Используем длину более длинной
-          последовательности.
+          Если ВСЕ ключевые основы
+          типового названия найдены
+          внутри более длинного названия,
+          считаем совпадение сильным.
 
-          Это специально снижает уверенность,
-          если совпала только малая часть
-          длинного названия работы.
+          Например:
+
+          "подземная кабельная канализация"
+
+          ↕ соответствует
+
+          "прокладка подземной
+           кабельной канализации"
         */
 
-        const comparisonLength =
-          Math.max(
-            1,
-            Math.max(
-              queryRoots.length,
-              candidateRoots.length
-            )
-          );
-
-        const rootRatio =
-          uniqueMatchedRoots.length /
-          comparisonLength;
-
-        score =
-          Math.round(
-            rootRatio * 75
-          );
-
         if (
-          uniqueMatchedRoots.length >
-          0
+          candidateRoots.length >= 2 &&
+          candidateCoverage === 1
         ) {
+          score = 92;
+
           reasons.push(
-            `Совпали ключевые основы: ` +
-            uniqueMatchedRoots.join(
-              ', '
-            ) +
-            '.'
+            'Все ключевые основы типового названия найдены в названии работы с учётом словоформ.'
           );
+        }
+
+        /*
+          Частичное совпадение.
+
+          Здесь специально оставляем
+          более низкий балл, чтобы
+          разные технологии не путались.
+        */
+
+        else {
+          score =
+            Math.round(
+              (
+                candidateCoverage *
+                  0.6 +
+                queryCoverage *
+                  0.4
+              ) *
+              60
+            );
+
+          if (
+            uniqueMatchedRoots.length >
+            0
+          ) {
+            reasons.push(
+              `Совпали ключевые основы: ` +
+              uniqueMatchedRoots.join(
+                ', '
+              ) +
+              '.'
+            );
+          }
         }
       }
 
