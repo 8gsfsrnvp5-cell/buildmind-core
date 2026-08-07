@@ -201,6 +201,202 @@ function calculateWorkMatcherScore(
       let score = 0;
       const reasons = [];
 
+      /*
+        1. Полное совпадение
+      */
+
+      if (
+        normalizedQuery ===
+        normalizedCandidate
+      ) {
+        score = 100;
+
+        reasons.push(
+          'Точное совпадение с типовым названием или псевдонимом.'
+        );
+      }
+
+      /*
+        2. Типовой alias полностью входит
+           в реальное название работы.
+
+        Например:
+
+        "подземная кабельная канализация"
+
+        входит в:
+
+        "прокладка подземной кабельной канализации"
+      */
+
+      else if (
+        normalizedQuery.includes(
+          normalizedCandidate
+        )
+      ) {
+        score = 92;
+
+        reasons.push(
+          'Типовое название или псевдоним полностью входит в название работы.'
+        );
+      }
+
+      /*
+        3. Реальное название входит
+           в типовое название.
+      */
+
+      else if (
+        normalizedCandidate.includes(
+          normalizedQuery
+        )
+      ) {
+        score = 88;
+
+        reasons.push(
+          'Название работы входит в типовое название или псевдоним.'
+        );
+      }
+
+      /*
+        4. Если прямого совпадения нет,
+           считаем совпадение по основам слов.
+      */
+
+      else {
+        const queryRoots =
+          getWorkMatcherRoots(
+            normalizedQuery
+          );
+
+        const candidateRoots =
+          getWorkMatcherRoots(
+            normalizedCandidate
+          );
+
+        const matchedRoots =
+          queryRoots.filter(
+            function (queryRoot) {
+              return candidateRoots.some(
+                function (
+                  candidateRoot
+                ) {
+                  return (
+                    queryRoot ===
+                      candidateRoot ||
+                    (
+                      queryRoot.length >=
+                        4 &&
+                      candidateRoot.length >=
+                        4 &&
+                      (
+                        queryRoot.startsWith(
+                          candidateRoot
+                        ) ||
+                        candidateRoot.startsWith(
+                          queryRoot
+                        )
+                      )
+                    )
+                  );
+                }
+              );
+            }
+          );
+
+        const uniqueMatchedRoots =
+          Array.from(
+            new Set(
+              matchedRoots
+            )
+          );
+
+        /*
+          Используем длину более длинной
+          последовательности.
+
+          Это специально снижает уверенность,
+          если совпала только малая часть
+          длинного названия работы.
+        */
+
+        const comparisonLength =
+          Math.max(
+            1,
+            Math.max(
+              queryRoots.length,
+              candidateRoots.length
+            )
+          );
+
+        const rootRatio =
+          uniqueMatchedRoots.length /
+          comparisonLength;
+
+        score =
+          Math.round(
+            rootRatio * 75
+          );
+
+        if (
+          uniqueMatchedRoots.length >
+          0
+        ) {
+          reasons.push(
+            `Совпали ключевые основы: ` +
+            uniqueMatchedRoots.join(
+              ', '
+            ) +
+            '.'
+          );
+        }
+      }
+
+      if (
+        score > bestScore
+      ) {
+        bestScore = score;
+        bestReasons = reasons;
+      }
+    }
+  );
+
+  return {
+    score:
+      Math.min(
+        Math.round(
+          bestScore
+        ),
+        100
+      ),
+
+    reasons:
+      bestReasons
+  };
+}
+
+  const searchableValues = [
+    workItem.name,
+    ...(workItem.aliases || [])
+  ];
+
+  let bestScore = 0;
+  let bestReasons = [];
+
+  searchableValues.forEach(
+    function (candidateValue) {
+      const normalizedCandidate =
+        normalizeWorkMatcherText(
+          candidateValue
+        );
+
+      if (!normalizedCandidate) {
+        return;
+      }
+
+      let score = 0;
+      const reasons = [];
+
       if (
         normalizedQuery ===
         normalizedCandidate
