@@ -515,6 +515,18 @@ function findBuildMindWorkMatch(
     };
   }
 
+  const taxonomyResult =
+    (
+      window.BuildMindWorkTaxonomy &&
+      typeof window.BuildMindWorkTaxonomy
+        .classify === 'function'
+    )
+      ? window.BuildMindWorkTaxonomy
+          .classify(
+            workName
+          )
+      : null;
+  
   const candidates =
     knowledge.works
       .map(
@@ -571,6 +583,25 @@ function findBuildMindWorkMatch(
 
       requestedWork:
         workName,
+      
+            workFamily:
+        (
+          taxonomyResult &&
+          taxonomyResult.success
+        )
+          ? taxonomyResult.family
+          : null,
+
+      variant:
+        (
+          taxonomyResult &&
+          taxonomyResult.success
+        )
+          ? taxonomyResult.variant
+          : null,
+
+      taxonomy:
+        taxonomyResult,
 
       confidence,
 
@@ -605,6 +636,25 @@ function findBuildMindWorkMatch(
 
     requestedWork:
       workName,
+
+        workFamily:
+      (
+        taxonomyResult &&
+        taxonomyResult.success
+      )
+        ? taxonomyResult.family
+        : null,
+
+    variant:
+      (
+        taxonomyResult &&
+        taxonomyResult.success
+      )
+        ? taxonomyResult.variant
+        : null,
+
+    taxonomy:
+      taxonomyResult,
 
     matchedWork: {
       id:
