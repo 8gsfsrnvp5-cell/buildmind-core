@@ -2,7 +2,7 @@
 
 /*
   ==================================================
-  BUILDMIND PLANNING ENGINE — CORE V1
+  BUILDMIND PLANNING ENGINE — CORE V2
   ==================================================
 
   Назначение:
@@ -346,6 +346,22 @@ function resolvePlanningEngineWork(
     matcher
   };
 }
+function getPlanningEngineWorkQuantity(
+  contextMaterials
+) {
+  if (
+    !Array.isArray(
+      contextMaterials
+    ) ||
+    contextMaterials.length === 0
+  ) {
+    return {
+      quantity: null,
+      unit: '',
+      source:
+        'not-determined'
+    };
+  }
 
   /*
     Core V1:
