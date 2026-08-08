@@ -1095,6 +1095,417 @@ const ROAD_KNOWLEDGE_BASE = [
   }
 ];
 
+const ROAD_KNOWLEDGE_FAMILIES = [
+  {
+    id: 'cable-duct',
+    name: 'Кабельная канализация',
+    categoryId: 'cable-infrastructure',
+    categoryName: 'Кабельная инфраструктура',
+
+    base: {
+      description:
+        'Семейство работ по устройству кабельной канализации. Конкретный состав ресурсов зависит от варианта исполнения.',
+
+      materials: [
+        {
+          id: 'duct-pipe-family',
+          name: 'Труба кабельной канализации',
+          aliases: [
+            'труба',
+            'трубы',
+            'труба кабельной канализации'
+          ],
+          role:
+            'Основной канал для последующей прокладки кабеля',
+          required: true
+        },
+        {
+          id: 'pull-rope-family',
+          name: 'Протяжка или трос',
+          aliases: [
+            'протяжка',
+            'трос'
+          ],
+          role:
+            'Подготовка канала к последующей прокладке кабеля',
+          required: false
+        }
+      ],
+
+      typicalMissing: [
+        {
+          name: 'Маркировка трассы',
+          reason:
+            'Может отсутствовать отдельной строкой в материальной ведомости.'
+        },
+        {
+          name: 'Материалы герметизации',
+          reason:
+            'Потребность зависит от вводов, соединений и проектных решений.'
+        }
+      ],
+
+      tools: [
+        {
+          name: 'Измерительный инструмент',
+          quantityHint: 1
+        }
+      ],
+
+      equipment: [],
+
+      crew: {
+        suggestedRoles: [
+          {
+            role: 'Монтажник',
+            quantityHint: 3
+          }
+        ],
+
+        note:
+          'Базовый состав является предварительным и уточняется по варианту исполнения и объёму работ.'
+      },
+
+      checks: [
+        'Проверить трассу и фактическую длину кабельной канализации.',
+        'Проверить количество каналов и диаметр труб.',
+        'Проверить совместимость соединительных и крепёжных элементов.'
+      ],
+
+      risks: [
+        'Неполная комплектность сопутствующих материалов.',
+        'Несоответствие фактической трассы исходным проектным данным.'
+      ]
+    },
+
+    variants: {
+      underground: {
+        id: 'underground',
+        name: 'Подземное исполнение',
+        legacyWorkId:
+          'road-underground-duct'
+      },
+
+      overpass: {
+        id: 'overpass',
+        name: 'Эстакадное исполнение',
+
+        materials: [
+          {
+            id:
+              'duct-overpass-clamp',
+
+            name:
+              'Хомут крепления',
+
+            aliases: [
+              'хомут',
+              'хомуты',
+              'хомут крепления'
+            ],
+
+            role:
+              'Фиксация трубы к несущей конструкции',
+
+            required: true
+          },
+
+          {
+            id:
+              'duct-overpass-bracket',
+
+            name:
+              'Кронштейн или уголок',
+
+            aliases: [
+              'уголок',
+              'кронштейн',
+              'консоль'
+            ],
+
+            role:
+              'Опорный элемент для крепления труб',
+
+            required: true
+          },
+
+          {
+            id:
+              'duct-overpass-fastener',
+
+            name:
+              'Болтовой крепёж',
+
+            aliases: [
+              'болт',
+              'болты',
+              'гайка',
+              'гайки',
+              'шайба',
+              'шайбы',
+              'крепеж',
+              'крепёж'
+            ],
+
+            role:
+              'Соединение элементов крепления',
+
+            required: false
+          }
+        ],
+
+        typicalMissing: [
+          {
+            name:
+              'Болты, гайки и шайбы',
+
+            reason:
+              'Крепёж может учитываться комплектно и отсутствовать отдельными строками.'
+          },
+
+          {
+            name:
+              'Антикоррозионные материалы',
+
+            reason:
+              'Следует проверить требования к защите крепёжных и металлических элементов.'
+          }
+        ],
+
+        tools: [
+          {
+            name:
+              'Гаечный инструмент',
+
+            quantityHint:
+              2
+          },
+
+          {
+            name:
+              'Перфоратор или дрель',
+
+            quantityHint:
+              1
+          }
+        ],
+
+        equipment: [
+          {
+            name:
+              'Автовышка',
+
+            quantityHint:
+              1,
+
+            purpose:
+              'Доступ к зоне монтажа на высоте',
+
+            optional:
+              true
+          },
+
+          {
+            name:
+              'Манипулятор',
+
+            quantityHint:
+              1,
+
+            purpose:
+              'Подача труб и металлоконструкций',
+
+            optional:
+              true
+          }
+        ],
+
+        crew: {
+          suggestedRoles: [
+            {
+              role:
+                'Монтажник',
+
+              quantityHint:
+                3
+            },
+
+            {
+              role:
+                'Мастер или производитель работ',
+
+              quantityHint:
+                1
+            }
+          ],
+
+          note:
+            'Состав зависит от высоты, типа несущих конструкций, длины захватки и организации доступа.'
+        },
+
+        checks: [
+          'Проверить тип и шаг крепления труб.',
+          'Проверить несущие конструкции и точки крепления.',
+          'Проверить доступ для подъёмной техники и организацию безопасной работы на высоте.'
+        ],
+
+        risks: [
+          'Недостаток крепёжных элементов.',
+          'Несоответствие фактического шага опор расчётной схеме.',
+          'Отсутствие доступа для подъёмной техники в плановую дату.'
+        ]
+      },
+
+      bridge: {
+        id:
+          'bridge',
+
+        name:
+          'Мостовое исполнение',
+
+        materials: [
+          {
+            id:
+              'duct-bridge-bracket',
+
+            name:
+              'Специальный мостовой кронштейн',
+
+            aliases: [
+              'мостовой кронштейн',
+              'кронштейн'
+            ],
+
+            role:
+              'Крепление трассы к мостовой конструкции',
+
+            required:
+              true
+          },
+
+          {
+            id:
+              'duct-bridge-corrosion',
+
+            name:
+              'Антикоррозионный материал',
+
+            aliases: [
+              'антикоррозионный материал',
+              'антикоррозионное покрытие'
+            ],
+
+            role:
+              'Защита металлических элементов',
+
+            required:
+              false
+          }
+        ],
+
+        typicalMissing: [
+          {
+            name:
+              'Компенсационные элементы',
+
+            reason:
+              'Необходимость зависит от длины трассы, деформационных швов и конструкции моста.'
+          }
+        ],
+
+        tools: [],
+
+        equipment: [],
+
+        checks: [
+          'Проверить точки крепления к мостовой конструкции.',
+          'Проверить прохождение деформационных швов.',
+          'Проверить требования к антикоррозионной защите.'
+        ],
+
+        risks: [
+          'Конфликт трассы с элементами мостовой конструкции.',
+          'Неучтённые перемещения в зоне деформационных швов.'
+        ]
+      },
+
+      'above-ground': {
+        id:
+          'above-ground',
+
+        name:
+          'Надземное исполнение',
+
+        materials: [
+          {
+            id:
+              'duct-above-support',
+
+            name:
+              'Опорная конструкция',
+
+            aliases: [
+              'опора',
+              'стойка',
+              'опорная конструкция'
+            ],
+
+            role:
+              'Поддержка надземной трассы',
+
+            required:
+              true
+          },
+
+          {
+            id:
+              'duct-above-bracket',
+
+            name:
+              'Кронштейн крепления',
+
+            aliases: [
+              'кронштейн',
+              'консоль',
+              'уголок'
+            ],
+
+            role:
+              'Фиксация трубы на опорной конструкции',
+
+            required:
+              true
+          }
+        ],
+
+        typicalMissing: [
+          {
+            name:
+              'Крепёж опор и кронштейнов',
+
+            reason:
+              'Может учитываться комплектно и не выделяться отдельной строкой.'
+          }
+        ],
+
+        tools: [],
+
+        equipment: [],
+
+        checks: [
+          'Проверить шаг и устойчивость опор.',
+          'Проверить защиту трассы от механических воздействий.'
+        ],
+
+        risks: [
+          'Недостаточная жёсткость опорной системы.',
+          'Неучтённый крепёж.'
+        ]
+      }
+    }
+  }
+];
+
 function normalizeRoadKnowledgeText(value) {
   return String(value || '')
     .toLowerCase()
@@ -1148,6 +1559,263 @@ function findRoadKnowledgeWorkByName(value) {
   );
 }
 
+function getRoadKnowledgeFamilyById(
+  familyId
+) {
+  return (
+    ROAD_KNOWLEDGE_FAMILIES.find(
+      function (family) {
+        return (
+          family.id === familyId
+        );
+      }
+    ) || null
+  );
+}
+
+
+function mergeRoadKnowledgeObjectsByKey(
+  baseItems,
+  extraItems,
+  keyName
+) {
+  const result = [];
+
+  const seen =
+    new Set();
+
+  [
+    ...(baseItems || []),
+    ...(extraItems || [])
+  ].forEach(
+    function (item) {
+      const key =
+        normalizeRoadKnowledgeText(
+          item &&
+          item[keyName]
+        );
+
+      if (
+        !key ||
+        seen.has(key)
+      ) {
+        return;
+      }
+
+      seen.add(key);
+
+      result.push({
+        ...item
+      });
+    }
+  );
+
+  return result;
+}
+
+
+function mergeRoadKnowledgeStrings(
+  baseItems,
+  extraItems
+) {
+  return Array.from(
+    new Set([
+      ...(baseItems || []),
+      ...(extraItems || [])
+    ])
+  );
+}
+
+
+function resolveRoadKnowledgeFamilyVariant(
+  familyId,
+  variantId
+) {
+  const family =
+    getRoadKnowledgeFamilyById(
+      familyId
+    );
+
+  if (!family) {
+    return null;
+  }
+
+  const variant =
+    family.variants &&
+    variantId
+      ? family.variants[
+          variantId
+        ]
+      : null;
+
+  if (
+    variantId &&
+    !variant
+  ) {
+    return null;
+  }
+
+  /*
+    Для подземной версии у нас уже
+    существует старая рабочая запись.
+
+    Поэтому пока используем её
+    как совместимый legacy-слой.
+  */
+
+  if (
+    variant &&
+    variant.legacyWorkId
+  ) {
+    const legacyWork =
+      getRoadKnowledgeWorkById(
+        variant.legacyWorkId
+      );
+
+    if (legacyWork) {
+      return {
+        ...legacyWork,
+
+        familyId:
+          family.id,
+
+        familyName:
+          family.name,
+
+        variantId:
+          variant.id,
+
+        variantName:
+          variant.name,
+
+        knowledgeMode:
+          'family-variant',
+
+        legacyWorkId:
+          legacyWork.id
+      };
+    }
+  }
+
+  const base =
+    family.base || {};
+
+  const variantData =
+    variant || {};
+
+  const baseCrew =
+    base.crew || {};
+
+  const variantCrew =
+    variantData.crew || {};
+
+  return {
+    id:
+      `family-${family.id}-` +
+      `${variant ? variant.id : 'generic'}`,
+
+    familyId:
+      family.id,
+
+    familyName:
+      family.name,
+
+    variantId:
+      variant
+        ? variant.id
+        : null,
+
+    variantName:
+      variant
+        ? variant.name
+        : '',
+
+    knowledgeMode:
+      'family-variant',
+
+    categoryId:
+      family.categoryId,
+
+    categoryName:
+      family.categoryName,
+
+    name:
+      variant
+        ? `${family.name} — ${variant.name}`
+        : family.name,
+
+    aliases: [],
+
+    description:
+      [
+        base.description || '',
+        variantData.description || ''
+      ]
+        .filter(Boolean)
+        .join(' '),
+
+    materials:
+      mergeRoadKnowledgeObjectsByKey(
+        base.materials,
+        variantData.materials,
+        'id'
+      ),
+
+    typicalMissing:
+      mergeRoadKnowledgeObjectsByKey(
+        base.typicalMissing,
+        variantData.typicalMissing,
+        'name'
+      ),
+
+    tools:
+      mergeRoadKnowledgeObjectsByKey(
+        base.tools,
+        variantData.tools,
+        'name'
+      ),
+
+    equipment:
+      mergeRoadKnowledgeObjectsByKey(
+        base.equipment,
+        variantData.equipment,
+        'name'
+      ),
+
+    crew: {
+      suggestedRoles:
+        mergeRoadKnowledgeObjectsByKey(
+          baseCrew.suggestedRoles,
+          variantCrew.suggestedRoles,
+          'role'
+        ),
+
+      note:
+        variantCrew.note ||
+        baseCrew.note ||
+        ''
+    },
+
+    checks:
+      mergeRoadKnowledgeStrings(
+        base.checks,
+        variantData.checks
+      ),
+
+    risks:
+      mergeRoadKnowledgeStrings(
+        base.risks,
+        variantData.risks
+      ),
+
+    relatedWorkIds:
+      mergeRoadKnowledgeStrings(
+        base.relatedWorkIds,
+        variantData.relatedWorkIds
+      )
+  };
+}
+
 function getRoadKnowledgeCategories() {
   const categories = new Map();
 
@@ -1185,10 +1853,16 @@ function getRoadKnowledgeSummary() {
 
   const materialsCount =
     ROAD_KNOWLEDGE_BASE.reduce(
-      function (total, workItem) {
+      function (
+        total,
+        workItem
+      ) {
         return (
           total +
-          (workItem.materials || []).length
+          (
+            workItem.materials ||
+            []
+          ).length
         );
       },
       0
@@ -1196,7 +1870,10 @@ function getRoadKnowledgeSummary() {
 
   const missingChecksCount =
     ROAD_KNOWLEDGE_BASE.reduce(
-      function (total, workItem) {
+      function (
+        total,
+        workItem
+      ) {
         return (
           total +
           (
@@ -1222,6 +1899,26 @@ function getRoadKnowledgeSummary() {
 
     missingChecksCount,
 
+    familiesCount:
+      ROAD_KNOWLEDGE_FAMILIES.length,
+
+    familyVariantsCount:
+      ROAD_KNOWLEDGE_FAMILIES.reduce(
+        function (
+          total,
+          family
+        ) {
+          return (
+            total +
+            Object.keys(
+              family.variants ||
+              {}
+            ).length
+          );
+        },
+        0
+      ),
+
     categories
   };
 }
@@ -1233,6 +1930,9 @@ window.BuildMindRoadKnowledge = {
   works:
     ROAD_KNOWLEDGE_BASE,
 
+  families:
+    ROAD_KNOWLEDGE_FAMILIES,
+
   normalizeText:
     normalizeRoadKnowledgeText,
 
@@ -1241,6 +1941,12 @@ window.BuildMindRoadKnowledge = {
 
   findWorkByName:
     findRoadKnowledgeWorkByName,
+
+  getFamilyById:
+    getRoadKnowledgeFamilyById,
+
+  resolveFamilyVariant:
+    resolveRoadKnowledgeFamilyVariant,
 
   getCategories:
     getRoadKnowledgeCategories,
