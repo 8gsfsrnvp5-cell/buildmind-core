@@ -597,6 +597,265 @@ const BUILDMIND_RESOURCE_RULES = [
       'Рекомендуется подтвердить высоту, количество точек монтажа ' +
       'и организацию движения на участке.'
   }
+  ,
+
+/*
+  ==================================================
+  СЕМЕЙСТВО: КАБЕЛЬНАЯ КАНАЛИЗАЦИЯ
+  БАЗОВЫЕ ПРАВИЛА
+  ==================================================
+*/
+
+{
+  id:
+    'cable-duct-family-pipe',
+
+  familyId:
+    'cable-duct',
+
+  resourceType:
+    'material',
+
+  resourceName:
+    'Труба кабельной канализации',
+
+  resourceAliases: [
+    'труба',
+    'трубы',
+    'труба 76'
+  ],
+
+  calculationType:
+    'per-length',
+
+  inputUnit:
+    'м',
+
+  outputUnit:
+    'м',
+
+  rate:
+    1,
+
+  reservePercent:
+    3,
+
+  rounding:
+    10,
+
+  confidence:
+    'medium',
+
+  sourceType:
+    'buildmind-demo-rule',
+
+  basisDescription:
+    'Базовая предварительная оценка длины трубы по длине трассы ' +
+    'с небольшим технологическим запасом.',
+
+  verification:
+    'Рекомендуется проверить количество каналов, фактическую длину трассы, ' +
+    'монтажный запас и проектную спецификацию.'
+},
+
+/*
+  ==================================================
+  КАБЕЛЬНАЯ КАНАЛИЗАЦИЯ — ЭСТАКАДНОЕ ИСПОЛНЕНИЕ
+  ==================================================
+*/
+
+{
+  id:
+    'cable-duct-overpass-clamps',
+
+  familyId:
+    'cable-duct',
+
+  variantId:
+    'overpass',
+
+  resourceType:
+    'material',
+
+  resourceName:
+    'Хомут крепления',
+
+  resourceAliases: [
+    'хомут',
+    'хомуты'
+  ],
+
+  calculationType:
+    'per-length',
+
+  inputUnit:
+    'м',
+
+  outputUnit:
+    'шт',
+
+  rate:
+    0.67,
+
+  reservePercent:
+    10,
+
+  rounding:
+    10,
+
+  confidence:
+    'low',
+
+  sourceType:
+    'buildmind-demo-rule',
+
+  assumptions: [
+    'Демонстрационное допущение: ориентировочно один хомут на 1,5 м трассы.'
+  ],
+
+  basisDescription:
+    'Предварительный расчёт крепления по длине эстакадной трассы.',
+
+  verification:
+    'Рекомендуется проверить проектный шаг крепления, диаметр трубы, ' +
+    'тип хомутов и фактические точки крепления.'
+},
+
+{
+  id:
+    'cable-duct-overpass-brackets',
+
+  familyId:
+    'cable-duct',
+
+  variantId:
+    'overpass',
+
+  resourceType:
+    'material',
+
+  resourceName:
+    'Кронштейн или уголок',
+
+  resourceAliases: [
+    'кронштейн',
+    'уголок',
+    'консоль'
+  ],
+
+  calculationType:
+    'per-length',
+
+  inputUnit:
+    'м',
+
+  outputUnit:
+    'шт',
+
+  rate:
+    0.34,
+
+  reservePercent:
+    10,
+
+  rounding:
+    10,
+
+  confidence:
+    'low',
+
+  sourceType:
+    'buildmind-demo-rule',
+
+  assumptions: [
+    'Демонстрационное допущение: ориентировочно одна опорная позиция на 3 м трассы.'
+  ],
+
+  basisDescription:
+    'Предварительная оценка количества опорных элементов по длине трассы.',
+
+  verification:
+    'Рекомендуется проверить фактический шаг опор, существующие конструкции, ' +
+    'нагрузку и проектные узлы крепления.'
+},
+
+{
+  id:
+    'cable-duct-overpass-lift',
+
+  familyId:
+    'cable-duct',
+
+  variantId:
+    'overpass',
+
+  resourceType:
+    'equipment',
+
+  resourceName:
+    'Автовышка',
+
+  calculationType:
+    'equipment-fixed',
+
+  outputUnit:
+    'ед.',
+
+  quantity:
+    1,
+
+  confidence:
+    'low',
+
+  sourceType:
+    'buildmind-demo-rule',
+
+  basisDescription:
+    'Предварительно учитывается потребность в доступе к зоне монтажа на высоте.',
+
+  verification:
+    'Рекомендуется проверить высоту эстакады, фактический доступ, ' +
+    'схему организации движения и допустимый тип подъёмной техники.'
+},
+
+{
+  id:
+    'cable-duct-overpass-installers',
+
+  familyId:
+    'cable-duct',
+
+  variantId:
+    'overpass',
+
+  resourceType:
+    'labor',
+
+  resourceName:
+    'Монтажник',
+
+  calculationType:
+    'crew-fixed',
+
+  outputUnit:
+    'чел.',
+
+  quantity:
+    3,
+
+  confidence:
+    'low',
+
+  sourceType:
+    'buildmind-demo-rule',
+
+  basisDescription:
+    'Предварительный минимальный состав монтажного звена для демонстрационной модели.',
+
+  verification:
+    'Рекомендуется уточнить состав бригады по длине захватки, высоте, ' +
+    'сменности, производительности и условиям доступа.'
+}
 ];
 
 
@@ -653,6 +912,83 @@ function getPlanningRulesByWorkId(
         rule.workId ===
         workId
       );
+    }
+  );
+}
+
+function getPlanningRulesForContext(
+  contextDefinition
+) {
+  const definition =
+    contextDefinition &&
+    typeof contextDefinition ===
+      'object'
+      ? contextDefinition
+      : {};
+
+  const workId =
+    definition.workId || '';
+
+  const familyId =
+    definition.familyId || '';
+
+  const variantId =
+    definition.variantId || '';
+
+  const rules =
+    BUILDMIND_RESOURCE_RULES.filter(
+      function (rule) {
+        const matchesLegacyWork =
+          Boolean(
+            workId &&
+            rule.workId ===
+              workId
+          );
+
+        const matchesFamilyBase =
+          Boolean(
+            familyId &&
+            rule.familyId ===
+              familyId &&
+            !rule.variantId
+          );
+
+        const matchesFamilyVariant =
+          Boolean(
+            familyId &&
+            variantId &&
+            rule.familyId ===
+              familyId &&
+            rule.variantId ===
+              variantId
+          );
+
+        return (
+          matchesLegacyWork ||
+          matchesFamilyBase ||
+          matchesFamilyVariant
+        );
+      }
+    );
+
+  const seenIds =
+    new Set();
+
+  return rules.filter(
+    function (rule) {
+      if (
+        seenIds.has(
+          rule.id
+        )
+      ) {
+        return false;
+      }
+
+      seenIds.add(
+        rule.id
+      );
+
+      return true;
     }
   );
 }
@@ -774,8 +1110,14 @@ function calculatePlanningRule(
     ruleId:
       rule.id,
 
-    workId:
-      rule.workId,
+   workId:
+  rule.workId || null,
+
+familyId:
+  rule.familyId || null,
+
+variantId:
+  rule.variantId || null,
 
     resourceType:
       rule.resourceType,
@@ -821,11 +1163,18 @@ function calculatePlanningRule(
       rule.verification || '',
 
     sourceType:
-      rule.sourceType ||
-      'buildmind-demo-rule',
+  rule.sourceType ||
+  'buildmind-demo-rule',
 
-    requiresEngineerConfirmation:
-      true
+assumptions:
+  Array.isArray(
+    rule.assumptions
+  )
+    ? [...rule.assumptions]
+    : [],
+
+requiresEngineerConfirmation:
+  true
   };
 }
 
@@ -871,15 +1220,110 @@ function calculatePlanningRulesForWork(
   };
 }
 
+function calculatePlanningRulesForContext(
+  contextDefinition,
+  options
+) {
+  const definition =
+    contextDefinition &&
+    typeof contextDefinition ===
+      'object'
+      ? contextDefinition
+      : {};
+
+  const rules =
+    getPlanningRulesForContext(
+      definition
+    );
+
+  const results =
+    rules.map(
+      function (rule) {
+        return calculatePlanningRule(
+          rule,
+          options
+        );
+      }
+    );
+
+  return {
+    success: true,
+
+    version:
+      BUILDMIND_PLANNING_RULES_VERSION,
+
+    workId:
+      definition.workId || null,
+
+    familyId:
+      definition.familyId || null,
+
+    variantId:
+      definition.variantId || null,
+
+    rulesFound:
+      rules.length,
+
+    results,
+
+    requiresEngineerConfirmation:
+      true,
+
+    disclaimer:
+      'Результаты являются предварительными расчётными оценками. ' +
+      'Рекомендуется проверить исходные данные, проектную документацию, ' +
+      'применённые допущения и подтвердить выводы ответственным специалистом.'
+  };
+}
+
 function getPlanningRulesSummary() {
   const workIds =
     Array.from(
       new Set(
-        BUILDMIND_RESOURCE_RULES.map(
-          function (rule) {
-            return rule.workId;
-          }
-        )
+        BUILDMIND_RESOURCE_RULES
+          .map(
+            function (rule) {
+              return rule.workId;
+            }
+          )
+          .filter(Boolean)
+      )
+    );
+
+  const familyIds =
+    Array.from(
+      new Set(
+        BUILDMIND_RESOURCE_RULES
+          .map(
+            function (rule) {
+              return rule.familyId;
+            }
+          )
+          .filter(Boolean)
+      )
+    );
+
+  const variantKeys =
+    Array.from(
+      new Set(
+        BUILDMIND_RESOURCE_RULES
+          .filter(
+            function (rule) {
+              return (
+                rule.familyId &&
+                rule.variantId
+              );
+            }
+          )
+          .map(
+            function (rule) {
+              return (
+                rule.familyId +
+                ':' +
+                rule.variantId
+              );
+            }
+          )
       )
     );
 
@@ -906,6 +1350,12 @@ function getPlanningRulesSummary() {
     worksCount:
       workIds.length,
 
+    familiesCount:
+      familyIds.length,
+
+    variantsCount:
+      variantKeys.length,
+
     byType
   };
 }
@@ -930,11 +1380,17 @@ window.BuildMindPlanningRules = {
   getByWorkId:
     getPlanningRulesByWorkId,
 
+  getForContext:
+    getPlanningRulesForContext,
+
   calculate:
     calculatePlanningRule,
 
   calculateForWork:
     calculatePlanningRulesForWork,
+
+  calculateForContext:
+    calculatePlanningRulesForContext,
 
   getSummary:
     getPlanningRulesSummary
