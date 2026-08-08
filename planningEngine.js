@@ -19,7 +19,7 @@
 */
 
 const BUILDMIND_PLANNING_ENGINE_VERSION =
-  'planning-engine-core-v1';
+  'planning-engine-core-v2';
 
 
 function getPlanningEngineActiveContext() {
@@ -149,47 +149,203 @@ function calculatePlanningEngineMaterialState(
 }
 
 
-function getPlanningEngineWorkItem(
+function resolvePlanningEngineWork(
   context
 ) {
   const knowledge =
     window.BuildMindRoadKnowledge;
 
-  if (!knowledge || !context) {
-    return null;
+  if (
+    !knowledge ||
+    !context
+  ) {
+    return {
+      success: false,
+
+      errorCode:
+        'KNOWLEDGE_OR_CONTEXT_NOT_FOUND',
+
+      errorMessage:
+        'Не найдена база знаний или активный контекст.'
+    };
   }
+
+  const taxonomy =
+    (
+      window.BuildMindWorkTaxonomy &&
+      typeof window
+        .BuildMindWorkTaxonomy
+        .classify === 'function'
+    )
+      ? window
+          .BuildMindWorkTaxonomy
+          .classify(
+            context.work
+          )
+      : null;
+
+  const matcher =
+    (
+      window.BuildMindWorkMatcher &&
+      typeof window
+        .BuildMindWorkMatcher
+        .find === 'function'
+    )
+      ? window
+          .BuildMindWorkMatcher
+          .find(
+            context.work
+          )
+      : null;
+
+  /*
+    Основной новый путь:
+
+    реальное название
+    → Taxonomy
+    → family
+    → variant
+    → Road Knowledge Family
+  */
+
+  if (
+    taxonomy &&
+    taxonomy.success &&
+    taxonomy.family &&
+    taxonomy.variant &&
+    typeof knowledge
+      .resolveFamilyVariant ===
+      'function'
+  ) {
+    const familyWork =
+      knowledge.resolveFamilyVariant(
+        taxonomy.family.id,
+        taxonomy.variant.id
+      );
+
+    if (familyWork) {
+      return {
+        success: true,
+
+        source:
+          'taxonomy-family-variant',
+
+        workItem:
+          familyWork,
+
+        taxonomy,
+
+        matcher
+      };
+    }
+  }
+
+  /*
+    Второй путь:
+    обычный Work Matcher.
+  */
+
+  if (
+    matcher &&
+    matcher.success &&
+    matcher.matchedWork &&
+    typeof knowledge
+      .getWorkById ===
+      'function'
+  ) {
+    const matchedWork =
+      knowledge.getWorkById(
+        matcher.matchedWork.id
+      );
+
+    if (matchedWork) {
+      return {
+        success: true,
+
+        source:
+          'work-matcher',
+
+        workItem:
+          matchedWork,
+
+        taxonomy,
+
+        matcher
+      };
+    }
+  }
+
+  /*
+    Legacy fallback.
+  */
 
   if (
     typeof knowledge
-      .findWorkByName !== 'function'
+      .findWorkByName ===
+      'function'
   ) {
-    return null;
+    const legacyWork =
+      knowledge.findWorkByName(
+        context.work
+      );
+
+    if (legacyWork) {
+      return {
+        success: true,
+
+        source:
+          'legacy-name-match',
+
+        workItem:
+          legacyWork,
+
+        taxonomy,
+
+        matcher
+      };
+    }
   }
 
-  return (
-    knowledge.findWorkByName(
-      context.work
-    )
-  );
-}
+  /*
+    Семейство известно,
+    но вариант не определён.
+  */
 
-
-function getPlanningEngineWorkQuantity(
-  contextMaterials
-) {
   if (
-    !Array.isArray(
-      contextMaterials
-    ) ||
-    contextMaterials.length === 0
+    taxonomy &&
+    taxonomy.success &&
+    taxonomy.family &&
+    !taxonomy.variant
   ) {
     return {
-      quantity: null,
-      unit: '',
-      source:
-        'not-determined'
+      success: false,
+
+      errorCode:
+        'WORK_VARIANT_REQUIRED',
+
+      errorMessage:
+        'Семейство работы определено, но вариант исполнения требует уточнения.',
+
+      taxonomy,
+
+      matcher
     };
   }
+
+  return {
+    success: false,
+
+    errorCode:
+      'WORK_NOT_RESOLVED',
+
+    errorMessage:
+      'Не удалось надёжно определить инженерную модель работы.',
+
+    taxonomy,
+
+    matcher
+  };
+}
 
   /*
     Core V1:
@@ -245,19 +401,178 @@ function getPlanningEngineWorkQuantity(
   };
 }
 
+function planningEngineResourceFound(
+  resource,
+  contextMaterials
+) {
+  const searchableNames = [
+    resource.name,
+    ...(resource.aliases || [])
+  ]
+    .map(
+      normalizePlanningEngineText
+    )
+    .filter(Boolean);
+
+  return contextMaterials.some(
+    function (material) {
+      const materialName =
+        normalizePlanningEngineText(
+          material.name
+        );
+
+      return searchableNames.some(
+        function (
+          searchableName
+        ) {
+          return (
+            materialName.includes(
+              searchableName
+            ) ||
+            searchableName.includes(
+              materialName
+            )
+          );
+        }
+      );
+    }
+  );
+}
+
+
+function runPlanningEngineFamilyAudit(
+  workItem,
+  contextMaterials
+) {
+  const materialsToCheck =
+    Array.isArray(
+      workItem.materials
+    )
+      ? workItem.materials
+      : [];
+
+  const missingRequiredMaterials =
+    materialsToCheck
+      .filter(
+        function (resource) {
+          return (
+            resource.required &&
+            !planningEngineResourceFound(
+              resource,
+              contextMaterials
+            )
+          );
+        }
+      )
+      .map(
+        function (resource) {
+          return {
+            id:
+              resource.id || '',
+
+            name:
+              resource.name || '',
+
+            role:
+              resource.role || ''
+          };
+        }
+      );
+
+  const typicalMissingChecks =
+    (
+      workItem.typicalMissing ||
+      []
+    ).map(
+      function (item) {
+        return {
+          name:
+            item.name || '',
+
+          reason:
+            item.reason || '',
+
+          found:
+            planningEngineResourceFound(
+              {
+                name:
+                  item.name || '',
+
+                aliases:
+                  item.aliases || []
+              },
+
+              contextMaterials
+            )
+        };
+      }
+    );
+
+  return {
+    success: true,
+
+    mode:
+      'family-variant-audit',
+
+    workId:
+      workItem.id,
+
+    familyId:
+      workItem.familyId ||
+      null,
+
+    variantId:
+      workItem.variantId ||
+      null,
+
+    missingRequiredMaterials,
+
+    typicalMissingChecks,
+
+    requiresEngineerConfirmation:
+      true,
+
+    disclaimer:
+      'Проверка комплектности выполнена по предварительной базе знаний BuildMind. ' +
+      'Рекомендуется сверить результат с проектной документацией и подтвердить ответственным специалистом.'
+  };
+}
 
 function runPlanningEngineAudit(
   workItem,
   contextMaterials
 ) {
+  if (!workItem) {
+    return null;
+  }
+
+  /*
+    Новая Family + Variant модель.
+  */
+
+  if (
+    workItem.knowledgeMode ===
+      'family-variant'
+  ) {
+    return runPlanningEngineFamilyAudit(
+      workItem,
+      contextMaterials
+    );
+  }
+
+  /*
+    Старые типовые работы
+    продолжают использовать
+    Engineering Audit.
+  */
+
   const auditEngine =
     window.BuildMindEngineeringAudit;
 
   if (
     !auditEngine ||
     typeof auditEngine.run !==
-      'function' ||
-    !workItem
+      'function'
   ) {
     return null;
   }
@@ -281,9 +596,6 @@ function runPlanningEngineRules(
 
   if (
     !rulesEngine ||
-    typeof rulesEngine
-      .calculateForWork !==
-      'function' ||
     !workItem
   ) {
     return null;
@@ -304,18 +616,64 @@ function runPlanningEngineRules(
     };
   }
 
-  return (
-    rulesEngine.calculateForWork(
-      workItem.id,
-      {
-        workQuantity:
-          workQuantity.quantity,
+  const calculationInput = {
+    workQuantity:
+      workQuantity.quantity,
 
-        workUnit:
-          workQuantity.unit
-      }
-    )
-  );
+    workUnit:
+      workQuantity.unit
+  };
+
+  /*
+    Новый V2-путь.
+  */
+
+  if (
+    typeof rulesEngine
+      .calculateForContext ===
+      'function'
+  ) {
+    return rulesEngine
+      .calculateForContext(
+        {
+          workId:
+            workItem.legacyWorkId ||
+            (
+              workItem.familyId
+                ? null
+                : workItem.id
+            ),
+
+          familyId:
+            workItem.familyId ||
+            null,
+
+          variantId:
+            workItem.variantId ||
+            null
+        },
+
+        calculationInput
+      );
+  }
+
+  /*
+    Совместимость с V1.
+  */
+
+  if (
+    typeof rulesEngine
+      .calculateForWork ===
+      'function'
+  ) {
+    return rulesEngine
+      .calculateForWork(
+        workItem.id,
+        calculationInput
+      );
+  }
+
+  return null;
 }
 
 
@@ -615,25 +973,49 @@ function runBuildMindPlanningEngine(
       allMaterials
     );
 
-  const workItem =
-    getPlanningEngineWorkItem(
-      activeContext
-    );
+  const workResolution =
+  resolvePlanningEngineWork(
+    activeContext
+  );
 
-  if (!workItem) {
-    return {
-      success: false,
+if (
+  !workResolution ||
+  !workResolution.success
+) {
+  return {
+    success: false,
 
-      errorCode:
-        'WORK_NOT_FOUND_IN_KNOWLEDGE_BASE',
+    errorCode:
+      workResolution &&
+      workResolution.errorCode
+        ? workResolution.errorCode
+        : 'WORK_NOT_RESOLVED',
 
-      errorMessage:
-        'Активная работа пока не найдена в Road Knowledge Base.',
+    errorMessage:
+      workResolution &&
+      workResolution.errorMessage
+        ? workResolution.errorMessage
+        : 'Активная работа не распознана.',
 
-      context:
-        activeContext
-    };
-  }
+    context:
+      activeContext,
+
+    taxonomy:
+      workResolution
+        ? workResolution.taxonomy ||
+          null
+        : null,
+
+    matcher:
+      workResolution
+        ? workResolution.matcher ||
+          null
+        : null
+  };
+}
+
+const workItem =
+  workResolution.workItem;
 
   const workQuantity =
     settings.workQuantity !==
@@ -705,16 +1087,43 @@ function runBuildMindPlanningEngine(
         ...activeContext
       },
 
-    work: {
-      id:
-        workItem.id,
+  work: {
+  id:
+    workItem.id,
 
-      name:
-        workItem.name,
+  name:
+    workItem.name,
 
-      category:
-        workItem.categoryName || ''
-    },
+  category:
+    workItem.categoryName || '',
+
+  familyId:
+    workItem.familyId ||
+    null,
+
+  familyName:
+    workItem.familyName ||
+    '',
+
+  variantId:
+    workItem.variantId ||
+    null,
+
+  variantName:
+    workItem.variantName ||
+    '',
+
+  resolutionSource:
+    workResolution.source
+},
+
+taxonomy:
+  workResolution.taxonomy ||
+  null,
+
+matcher:
+  workResolution.matcher ||
+  null,
 
     schedule,
 
@@ -785,11 +1194,27 @@ function getBuildMindPlanningReadableResult(
     `Работа: ${result.work.name}`
   );
 
-  lines.push(
-    `Категория: ${result.work.category}`
-  );
+ lines.push(
+  `Категория: ${result.work.category}`
+);
 
-  lines.push('');
+if (
+  result.work.familyName
+) {
+  lines.push(
+    `Семейство: ${result.work.familyName}`
+  );
+}
+
+if (
+  result.work.variantName
+) {
+  lines.push(
+    `Исполнение: ${result.work.variantName}`
+  );
+}
+
+lines.push('');
 
   lines.push(
     `Статус анализа: ${result.risks.overall.label}`
