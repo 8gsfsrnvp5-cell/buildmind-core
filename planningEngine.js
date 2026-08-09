@@ -2,7 +2,7 @@
 
 /*
   ==================================================
-  BUILDMIND PLANNING ENGINE — CORE V2
+  BUILDMIND PLANNING ENGINE — CORE V2.1
   ==================================================
 
   Назначение:
@@ -19,7 +19,7 @@
 */
 
 const BUILDMIND_PLANNING_ENGINE_VERSION =
-  'planning-engine-core-v2';
+  'planning-engine-core-v2.1';
 
 
 function getPlanningEngineActiveContext() {
