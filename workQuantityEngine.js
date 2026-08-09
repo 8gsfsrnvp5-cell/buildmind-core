@@ -1390,17 +1390,16 @@ function analyzeWorkQuantityDocument(
           pageText
         );
 
-      quantityCandidates.forEach(
+          quantityCandidates.forEach(
         function (
           quantityCandidate
         ) {
           const scoring =
-  scoreWorkQuantityCandidate(
-    contextProfile,
-    quantityCandidate,
-    pageText,
-    sourcePriority
-  );
+            scoreWorkQuantityCandidate(
+              contextProfile,
+              quantityCandidate,
+              pageText,
+              sourcePriority
             );
 
           if (
@@ -1421,29 +1420,32 @@ function analyzeWorkQuantityDocument(
 
             score:
               scoring.score,
-candidateKind:
-  scoring.candidateKind,
 
-eligibleForWorkQuantity:
-  scoring.eligibleForWorkQuantity,
+            candidateKind:
+              scoring.candidateKind,
 
-strongWorkContext:
-  scoring.strongWorkContext,
+            eligibleForWorkQuantity:
+              scoring.eligibleForWorkQuantity,
 
-familyCoverage:
-  scoring.familyMatch.coverage,
+            strongWorkContext:
+              scoring.strongWorkContext,
 
-familyMatchedRoots:
-  scoring.familyMatch.matchedRoots,
+            familyCoverage:
+              scoring.familyMatch.coverage,
 
-variantMatches:
-  scoring.variantMatches,
+            familyMatchedRoots:
+              scoring.familyMatch
+                .matchedRoots,
 
-intentMatches:
-  scoring.intentMatches,
+            variantMatches:
+              scoring.variantMatches,
 
-nearbyResource:
-  scoring.nearbyResource,
+            intentMatches:
+              scoring.intentMatches,
+
+            nearbyResource:
+              scoring.nearbyResource,
+
             confidence:
               getWorkQuantityConfidence(
                 scoring.score
@@ -1486,8 +1488,6 @@ nearbyResource:
           });
         }
       );
-    }
-  );
 
   return results;
 }
