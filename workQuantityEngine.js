@@ -21,7 +21,7 @@
 */
 
 const BUILDMIND_WORK_QUANTITY_ENGINE_VERSION =
-  'work-quantity-engine-demo-v1';
+  'work-quantity-engine-demo-v2';
 
 
 /*
@@ -386,6 +386,457 @@ function getWorkQuantitySourcePriority(
   ==================================================
 */
 
+function getWorkQuantityContextProfile(
+  context
+) {
+  const profile = {
+    workName:
+      context && context.work
+        ? context.work
+        : '',
+
+    familyId:
+      null,
+
+    familyName:
+      '',
+
+    variantId:
+      null,
+
+    variantName:
+      '',
+
+    familyRoots:
+      [],
+
+    variantRoots:
+      [],
+
+    variantMarkers:
+      [],
+
+    resourceNames:
+      []
+  };
+
+
+  /*
+    ==============================================
+    TAXONOMY
+    ==============================================
+  */
+
+  const taxonomyEngine =
+    window.BuildMindWorkTaxonomy;
+
+  let taxonomy = null;
+
+  if (
+    taxonomyEngine &&
+    typeof taxonomyEngine.classify ===
+      'function' &&
+    profile.workName
+  ) {
+    taxonomy =
+      taxonomyEngine.classify(
+        profile.workName
+      );
+  }
+
+
+  if (
+    taxonomy &&
+    taxonomy.success
+  ) {
+    if (taxonomy.family) {
+      profile.familyId =
+        taxonomy.family.id ||
+        null;
+
+      profile.familyName =
+        taxonomy.family.name ||
+        '';
+
+      profile.familyRoots =
+        Array.from(
+          new Set(
+            getWorkQuantityRoots(
+              profile.familyName
+            )
+          )
+        );
+    }
+
+
+    if (taxonomy.variant) {
+      profile.variantId =
+        taxonomy.variant.id ||
+        null;
+
+      profile.variantName =
+        taxonomy.variant.name ||
+        '';
+
+      profile.variantRoots =
+        Array.from(
+          new Set(
+            getWorkQuantityRoots(
+              profile.variantName
+            )
+          )
+        );
+    }
+  }
+
+
+  /*
+    ==============================================
+    МАРКЕРЫ ВАРИАНТА
+
+    Например для overpass:
+    эстакада
+    ==============================================
+  */
+
+  if (
+    taxonomyEngine &&
+    Array.isArray(
+      taxonomyEngine.families
+    ) &&
+    profile.familyId &&
+    profile.variantId
+  ) {
+    const family =
+      taxonomyEngine.families.find(
+        function (item) {
+          return (
+            item.id ===
+            profile.familyId
+          );
+        }
+      );
+
+    const variant =
+      family &&
+      Array.isArray(
+        family.variants
+      )
+        ? family.variants.find(
+            function (item) {
+              return (
+                item.id ===
+                profile.variantId
+              );
+            }
+          )
+        : null;
+
+
+    if (
+      variant &&
+      Array.isArray(
+        variant.markers
+      )
+    ) {
+      profile.variantMarkers =
+        variant.markers
+          .map(
+            function (marker) {
+              return (
+                marker.phrase ||
+                marker.root ||
+                ''
+              );
+            }
+          )
+          .filter(Boolean);
+    }
+  }
+
+
+  /*
+    ==============================================
+    ROAD KNOWLEDGE
+
+    Получаем характерные ресурсы работы.
+
+    Они нужны не для определения
+    объёма работы, а наоборот —
+    чтобы распознать ситуацию:
+
+    "Труба 5800 м"
+
+    как количество материала.
+    ==============================================
+  */
+
+  const knowledge =
+    window.BuildMindRoadKnowledge;
+
+  if (
+    knowledge &&
+    profile.familyId &&
+    typeof knowledge
+      .resolveFamilyVariant ===
+      'function'
+  ) {
+    const workKnowledge =
+      knowledge.resolveFamilyVariant(
+        profile.familyId,
+        profile.variantId
+      );
+
+    if (
+      workKnowledge &&
+      Array.isArray(
+        workKnowledge.materials
+      )
+    ) {
+      profile.resourceNames =
+        workKnowledge.materials
+          .flatMap(
+            function (resource) {
+              return [
+                resource.name,
+                ...(resource.aliases || [])
+              ];
+            }
+          )
+          .map(
+            normalizeWorkQuantityText
+          )
+          .filter(Boolean);
+    }
+  }
+
+
+  return profile;
+}
+
+const WORK_QUANTITY_INTENT_PHRASES = [
+  'объем работ',
+  'объём работ',
+  'объем работы',
+  'объём работы',
+  'протяженность',
+  'протяжённость',
+  'общая длина',
+  'длина трассы',
+  'длина участка',
+  'всего',
+  'итого'
+];
+
+
+function getWorkQuantityIntentMatches(
+  evidence
+) {
+  const normalized =
+    normalizeWorkQuantityText(
+      evidence
+    );
+
+  return WORK_QUANTITY_INTENT_PHRASES
+    .filter(
+      function (phrase) {
+        return normalized.includes(
+          normalizeWorkQuantityText(
+            phrase
+          )
+        );
+      }
+    );
+}
+
+
+function getWorkQuantityFamilyMatch(
+  profile,
+  evidence
+) {
+  const evidenceRoots =
+    getWorkQuantityRoots(
+      evidence
+    );
+
+  const familyRoots =
+    Array.isArray(
+      profile.familyRoots
+    )
+      ? profile.familyRoots
+      : [];
+
+  if (
+    familyRoots.length === 0
+  ) {
+    return {
+      coverage: 0,
+      matchedRoots: []
+    };
+  }
+
+  const matchedRoots =
+    familyRoots.filter(
+      function (familyRoot) {
+        return evidenceRoots.some(
+          function (evidenceRoot) {
+            return workQuantityRootsMatch(
+              familyRoot,
+              evidenceRoot
+            );
+          }
+        );
+      }
+    );
+
+  return {
+    coverage:
+      matchedRoots.length /
+      familyRoots.length,
+
+    matchedRoots
+  };
+}
+
+
+function getWorkQuantityVariantMatches(
+  profile,
+  evidence
+) {
+  const normalizedEvidence =
+    normalizeWorkQuantityText(
+      evidence
+    );
+
+  const markers =
+    Array.isArray(
+      profile.variantMarkers
+    )
+      ? profile.variantMarkers
+      : [];
+
+  return markers.filter(
+    function (marker) {
+      const normalizedMarker =
+        normalizeWorkQuantityText(
+          marker
+        );
+
+      if (!normalizedMarker) {
+        return false;
+      }
+
+      if (
+        normalizedEvidence.includes(
+          normalizedMarker
+        )
+      ) {
+        return true;
+      }
+
+      const markerRoots =
+        getWorkQuantityRoots(
+          normalizedMarker
+        );
+
+      const evidenceRoots =
+        getWorkQuantityRoots(
+          normalizedEvidence
+        );
+
+      return markerRoots.some(
+        function (markerRoot) {
+          return evidenceRoots.some(
+            function (evidenceRoot) {
+              return workQuantityRootsMatch(
+                markerRoot,
+                evidenceRoot
+              );
+            }
+          );
+        }
+      );
+    }
+  );
+}
+
+function findWorkQuantityNearbyResource(
+  profile,
+  evidence,
+  rawQuantity
+) {
+  const normalizedEvidence =
+    normalizeWorkQuantityText(
+      evidence
+    );
+
+  const resources =
+    Array.isArray(
+      profile.resourceNames
+    )
+      ? profile.resourceNames
+      : [];
+
+  if (
+    resources.length === 0
+  ) {
+    return null;
+  }
+
+
+  /*
+    Смотрим прежде всего текст,
+    находящийся непосредственно
+    перед найденным количеством.
+  */
+
+  const quantityText =
+    normalizeWorkQuantityText(
+      rawQuantity
+    );
+
+  const quantityIndex =
+    normalizedEvidence.lastIndexOf(
+      quantityText
+    );
+
+  const localStart =
+    quantityIndex >= 0
+      ? Math.max(
+          0,
+          quantityIndex - 90
+        )
+      : Math.max(
+          0,
+          normalizedEvidence.length -
+            120
+        );
+
+  const localEvidence =
+    normalizedEvidence.slice(
+      localStart,
+      quantityIndex >= 0
+        ? quantityIndex
+        : undefined
+    );
+
+
+  const matchedResource =
+    resources.find(
+      function (resourceName) {
+        return (
+          resourceName.length >= 3 &&
+          localEvidence.includes(
+            resourceName
+          )
+        );
+      }
+    );
+
+
+  return matchedResource || null;
+}
+
 function calculateWorkQuantityTextMatch(
   workName,
   text
@@ -574,7 +1025,7 @@ function getWorkQuantityEvidenceWindow(
 */
 
 function scoreWorkQuantityCandidate(
-  workName,
+  contextProfile,
   candidate,
   pageText,
   sourcePriority
@@ -583,30 +1034,127 @@ function scoreWorkQuantityCandidate(
     getWorkQuantityEvidenceWindow(
       pageText,
       candidate.index,
-      240,
-      100
+      260,
+      120
     );
+
+
+  /*
+    Совпадение с исходным
+    названием активной работы.
+  */
 
   const workMatch =
     calculateWorkQuantityTextMatch(
-      workName,
+      contextProfile.workName,
       evidence
     );
 
-  let score = 0;
 
   /*
-    Основной фактор —
-    сколько ключевых слов работы
-    присутствуют рядом с объёмом.
+    Совпадение с семейством.
+  */
+
+  const familyMatch =
+    getWorkQuantityFamilyMatch(
+      contextProfile,
+      evidence
+    );
+
+
+  /*
+    Признаки конкретного исполнения.
+  */
+
+  const variantMatches =
+    getWorkQuantityVariantMatches(
+      contextProfile,
+      evidence
+    );
+
+
+  /*
+    Слова, характерные именно
+    для объёма работы.
+  */
+
+  const intentMatches =
+    getWorkQuantityIntentMatches(
+      evidence
+    );
+
+
+  /*
+    Проверяем, не относится ли
+    количество к материалу.
+  */
+
+  const nearbyResource =
+    findWorkQuantityNearbyResource(
+      contextProfile,
+      evidence,
+      candidate.raw
+    );
+
+
+  let score = 0;
+
+
+  /*
+    ==============================================
+    1. FAMILY
+
+    Теперь семейство является
+    основным смысловым признаком.
+    ==============================================
+  */
+
+  score +=
+    familyMatch.coverage *
+    40;
+
+
+  /*
+    ==============================================
+    2. ИСХОДНОЕ НАЗВАНИЕ РАБОТЫ
+    ==============================================
   */
 
   score +=
     workMatch.coverage *
-    65;
+    15;
+
 
   /*
-    Приоритет типа документа.
+    ==============================================
+    3. ВАРИАНТ ИСПОЛНЕНИЯ
+    ==============================================
+  */
+
+  if (
+    variantMatches.length > 0
+  ) {
+    score += 15;
+  }
+
+
+  /*
+    ==============================================
+    4. ПРИЗНАКИ ОБЪЁМА РАБОТЫ
+    ==============================================
+  */
+
+  if (
+    intentMatches.length > 0
+  ) {
+    score += 15;
+  }
+
+
+  /*
+    ==============================================
+    5. ТИП ДОКУМЕНТА
+    ==============================================
   */
 
   score +=
@@ -616,10 +1164,13 @@ function scoreWorkQuantityCandidate(
       ) /
       100
     ) *
-    20;
+    10;
+
 
   /*
-    Инженерные единицы.
+    ==============================================
+    6. ПОДХОДЯЩАЯ ЕДИНИЦА
+    ==============================================
   */
 
   if (
@@ -635,30 +1186,95 @@ function scoreWorkQuantityCandidate(
       candidate.unit
     )
   ) {
-    score += 10;
-  }
-
-  /*
-    Сильное совпадение работы.
-  */
-
-  if (
-    workMatch.coverage >=
-      0.75
-  ) {
     score += 5;
   }
 
+
+  /*
+    ==============================================
+    ЗАЩИТА:
+
+    Если непосредственно перед
+    числом найден материал,
+    это вероятнее количество
+    материала, а не объём работы.
+
+    Мы не выбрасываем запись —
+    сохраняем её как вспомогательную.
+    ==============================================
+  */
+
+  let candidateKind =
+    'work-quantity-candidate';
+
+  let eligibleForWorkQuantity =
+    true;
+
+
+  if (nearbyResource) {
+    score -= 35;
+
+    candidateKind =
+      'material-quantity';
+
+    eligibleForWorkQuantity =
+      false;
+  }
+
+
+  /*
+    Для надёжного объёма работы
+    должно быть достаточно
+    инженерного контекста.
+
+    Одних двух совпавших слов
+    уже недостаточно.
+  */
+
+  const strongWorkContext =
+    Boolean(
+      familyMatch.coverage >= 1 &&
+      (
+        variantMatches.length > 0 ||
+        intentMatches.length > 0 ||
+        workMatch.coverage >= 0.75
+      )
+    );
+
+
+  if (!strongWorkContext) {
+    eligibleForWorkQuantity =
+      false;
+  }
+
+
   return {
     score:
-      Math.min(
-        Math.round(score),
-        100
+      Math.max(
+        0,
+        Math.min(
+          Math.round(score),
+          100
+        )
       ),
 
     evidence,
 
-    workMatch
+    workMatch,
+
+    familyMatch,
+
+    variantMatches,
+
+    intentMatches,
+
+    nearbyResource,
+
+    candidateKind,
+
+    eligibleForWorkQuantity,
+
+    strongWorkContext
   };
 }
 
@@ -731,6 +1347,11 @@ function analyzeWorkQuantityDocument(
     return [];
   }
 
+  const contextProfile =
+    getWorkQuantityContextProfile(
+      context
+    );
+  
   const extractedPages =
     Array.isArray(
       documentItem.analysis
@@ -774,11 +1395,12 @@ function analyzeWorkQuantityDocument(
           quantityCandidate
         ) {
           const scoring =
-            scoreWorkQuantityCandidate(
-              context.work,
-              quantityCandidate,
-              pageText,
-              sourcePriority
+  scoreWorkQuantityCandidate(
+    contextProfile,
+    quantityCandidate,
+    pageText,
+    sourcePriority
+  );
             );
 
           if (
@@ -799,7 +1421,29 @@ function analyzeWorkQuantityDocument(
 
             score:
               scoring.score,
+candidateKind:
+  scoring.candidateKind,
 
+eligibleForWorkQuantity:
+  scoring.eligibleForWorkQuantity,
+
+strongWorkContext:
+  scoring.strongWorkContext,
+
+familyCoverage:
+  scoring.familyMatch.coverage,
+
+familyMatchedRoots:
+  scoring.familyMatch.matchedRoots,
+
+variantMatches:
+  scoring.variantMatches,
+
+intentMatches:
+  scoring.intentMatches,
+
+nearbyResource:
+  scoring.nearbyResource,
             confidence:
               getWorkQuantityConfidence(
                 scoring.score
@@ -1002,8 +1646,20 @@ function findBuildMindWorkQuantity(
     }
   );
 
-  const bestCandidate =
-    candidates[0];
+ const eligibleCandidates =
+  candidates.filter(
+    function (candidate) {
+      return (
+        candidate
+          .eligibleForWorkQuantity ===
+        true
+      );
+    }
+  );
+
+
+const bestCandidate =
+  eligibleCandidates[0];
 
   if (
     !bestCandidate ||
@@ -1026,6 +1682,12 @@ function findBuildMindWorkQuantity(
           10
         ),
 
+eligibleCandidates:
+  eligibleCandidates.slice(
+    0,
+    10
+  ),
+      
       requiresEngineerConfirmation:
         true
     };
