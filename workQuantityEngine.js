@@ -1486,8 +1486,10 @@ function analyzeWorkQuantityDocument(
             requiresEngineerConfirmation:
               true
           });
-        }
+         }
       );
+    }
+  );
 
   return results;
 }
