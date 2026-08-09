@@ -346,7 +346,7 @@ function resolvePlanningEngineWork(
     matcher
   };
 }
-function getPlanningEngineWorkQuantity(
+function getPlanningEngineFallbackWorkQuantity(
   contextMaterials
 ) {
   if (
@@ -402,7 +402,7 @@ function getPlanningEngineWorkQuantity(
     };
   }
 
-  return {
+   return {
     quantity:
       Number(primary.need) || null,
 
@@ -412,8 +412,279 @@ function getPlanningEngineWorkQuantity(
     source:
       'temporary-material-need',
 
+    sourceLabel:
+      'Временная оценка по материальной потребности',
+
     sourceMaterial:
-      primary.name || ''
+      primary.name || '',
+
+    confidence: {
+      level:
+        'low',
+
+      label:
+        'Низкая'
+    },
+
+    requiresEngineerConfirmation:
+      true,
+
+    warning:
+      'Объём работы временно определён по крупнейшей материальной потребности, а не непосредственно из проектного документа.'
+  };
+}
+
+function resolvePlanningEngineWorkQuantity(
+  activeContext,
+  contextMaterials,
+  settings
+) {
+  const options =
+    settings &&
+    typeof settings ===
+      'object'
+      ? settings
+      : {};
+
+  /*
+    ==============================================
+    1. РУЧНОЙ ОБЪЁМ
+
+    Имеет высший приоритет,
+    если пользователь передал его явно.
+    ==============================================
+  */
+
+  if (
+    options.workQuantity !==
+      undefined &&
+    options.workQuantity !==
+      null &&
+    options.workQuantity !==
+      ''
+  ) {
+    const manualQuantity =
+      Number(
+        options.workQuantity
+      );
+
+    if (
+      Number.isFinite(
+        manualQuantity
+      ) &&
+      manualQuantity > 0
+    ) {
+      return {
+        quantity:
+          manualQuantity,
+
+        unit:
+          options.workUnit ||
+          '',
+
+        source:
+          'manual-input',
+
+        sourceLabel:
+          'Объём задан вручную',
+
+        confidence: {
+          level:
+            'manual',
+
+          label:
+            'Задан пользователем'
+        },
+
+        requiresEngineerConfirmation:
+          true
+      };
+    }
+  }
+
+
+  /*
+    ==============================================
+    2. ОБЪЁМ ИЗ ПРОЕКТНОГО ДОКУМЕНТА
+    ==============================================
+  */
+
+  const quantityEngine =
+    window.BuildMindWorkQuantity;
+
+  let documentSearch =
+    null;
+
+  if (
+    quantityEngine &&
+    typeof quantityEngine.find ===
+      'function'
+  ) {
+    documentSearch =
+      quantityEngine.find({
+        context:
+          activeContext
+      });
+
+    if (
+      documentSearch &&
+      documentSearch.success
+    ) {
+      return {
+        quantity:
+          documentSearch.quantity,
+
+        unit:
+          documentSearch.unit,
+
+        source:
+          'document-analysis',
+
+        sourceLabel:
+          documentSearch.sourceLabel ||
+          'Проектный документ',
+
+        sourceDocument:
+          documentSearch.sourceDocument ||
+          '',
+
+        sourcePage:
+          documentSearch.sourcePage ||
+          null,
+
+        sourceType:
+          documentSearch.sourceType ||
+          '',
+
+        evidence:
+          documentSearch.evidence ||
+          '',
+
+        score:
+          documentSearch.score,
+
+        confidence:
+          documentSearch.confidence,
+
+        requiresEngineerConfirmation:
+          true,
+
+        documentSearch: {
+          success:
+            true,
+
+          decisionStatus:
+            documentSearch
+              .decisionStatus ||
+            'requires-review'
+        }
+      };
+    }
+  }
+
+
+  /*
+    ==============================================
+    3. ВРЕМЕННЫЙ FALLBACK ПО МАТЕРИАЛАМ
+
+    Документ не дал достаточно
+    надёжного результата.
+
+    BuildMind не придумывает число,
+    а явно помечает временный источник.
+    ==============================================
+  */
+
+  const fallback =
+    getPlanningEngineFallbackWorkQuantity(
+      contextMaterials
+    );
+
+  if (
+    fallback &&
+    fallback.quantity !==
+      null
+  ) {
+    return {
+      ...fallback,
+
+      documentSearch:
+        documentSearch
+          ? {
+              success:
+                false,
+
+              errorCode:
+                documentSearch
+                  .errorCode ||
+                'WORK_QUANTITY_NOT_FOUND',
+
+              errorMessage:
+                documentSearch
+                  .errorMessage ||
+                'Объём работы в документах не подтверждён.'
+            }
+          : {
+              success:
+                false,
+
+              errorCode:
+                'WORK_QUANTITY_ENGINE_NOT_AVAILABLE',
+
+              errorMessage:
+                'Модуль поиска объёма в документах недоступен.'
+            }
+    };
+  }
+
+
+  /*
+    ==============================================
+    4. НЕТ НИ ОДНОГО ДОСТОВЕРНОГО ИСТОЧНИКА
+    ==============================================
+  */
+
+  return {
+    quantity:
+      null,
+
+    unit:
+      '',
+
+    source:
+      'not-determined',
+
+    sourceLabel:
+      'Объём не определён',
+
+    confidence: {
+      level:
+        'none',
+
+      label:
+        'Недостаточно данных'
+    },
+
+    requiresEngineerConfirmation:
+      true,
+
+    documentSearch:
+      documentSearch
+        ? {
+            success:
+              false,
+
+            errorCode:
+              documentSearch
+                .errorCode ||
+              'WORK_QUANTITY_NOT_FOUND',
+
+            errorMessage:
+              documentSearch
+                .errorMessage ||
+              'Объём работы в документах не подтверждён.'
+          }
+        : null
   };
 }
 
@@ -1033,25 +1304,12 @@ if (
 const workItem =
   workResolution.workItem;
 
-  const workQuantity =
-    settings.workQuantity !==
-      undefined
-      ? {
-          quantity:
-            Number(
-              settings.workQuantity
-            ),
-
-          unit:
-            settings.workUnit ||
-            '',
-
-          source:
-            'manual-input'
-        }
-      : getPlanningEngineWorkQuantity(
-          contextMaterials
-        );
+   const workQuantity =
+    resolvePlanningEngineWorkQuantity(
+      activeContext,
+      contextMaterials,
+      settings
+    );
 
   const engineeringAudit =
     runPlanningEngineAudit(
@@ -1230,6 +1488,78 @@ if (
   );
 }
 
+  lines.push(
+    'Объём работы: ' +
+    (
+      result.workQuantity &&
+      result.workQuantity.quantity !==
+        null
+        ? (
+            `${result.workQuantity.quantity} ` +
+            `${result.workQuantity.unit || ''}`
+          )
+        : 'не определён'
+    )
+  );
+
+
+  if (
+    result.workQuantity &&
+    result.workQuantity.sourceLabel
+  ) {
+    lines.push(
+      `Источник объёма: ` +
+      `${result.workQuantity.sourceLabel}`
+    );
+  }
+
+
+  if (
+    result.workQuantity &&
+    result.workQuantity.sourceDocument
+  ) {
+    lines.push(
+      `Документ: ` +
+      `${result.workQuantity.sourceDocument}`
+    );
+  }
+
+
+  if (
+    result.workQuantity &&
+    result.workQuantity.sourcePage
+  ) {
+    lines.push(
+      `Страница источника: ` +
+      `${result.workQuantity.sourcePage}`
+    );
+  }
+
+
+  if (
+    result.workQuantity &&
+    result.workQuantity.confidence &&
+    result.workQuantity.confidence.label
+  ) {
+    lines.push(
+      `Уверенность объёма: ` +
+      `${result.workQuantity.confidence.label}`
+    );
+  }
+
+
+  if (
+    result.workQuantity &&
+    result.workQuantity.warning
+  ) {
+    lines.push(
+      `Важно: ` +
+      `${result.workQuantity.warning}`
+    );
+  }
+
+  lines.push('');
+  
 lines.push('');
 
   lines.push(
