@@ -152,45 +152,42 @@
   <div class="grid">
     <label>
       Проект
-      <input
-        id="projectName"
-        value="АСУДД 1"
-      />
+     <input
+  id="projectName"
+  placeholder="Введите название проекта"
+/>
     </label>
 
     <label>
       Объект
       <input
-        id="objectName"
-        value="СВХ"
-      />
+  id="objectName"
+  placeholder="Введите объект"
+/>
     </label>
 
     <label>
       Общее начало проекта по ГПР
       <input
-        id="projectStartDate"
-        type="date"
-        value="2026-07-01"
-      />
+  id="projectStartDate"
+  type="date"
+/>
     </label>
 
     <label>
       Общее окончание проекта по ГПР
-      <input
-        id="projectEndDate"
-        type="date"
-        value="2026-12-30"
-      />
+     <input
+  id="projectEndDate"
+  type="date"
+/>
     </label>
 
     <label>
       Дата анализа
-      <input
-        id="todayDate"
-        type="date"
-        value="2026-07-09"
-      />
+     <input
+  id="todayDate"
+  type="date"
+/>
     </label>
   </div>
 
@@ -199,29 +196,37 @@
     Их пока использует app.js для расчёта материалов.
     Не удалять до подключения расчётов к выбранному контексту.
   -->
-  <div style="display: none;" aria-hidden="true">
-    <input
-      id="workName"
-      value="Кабельная канализация на эстакаде В4"
-    />
+ <div style="display: none;" aria-hidden="true">
+  <input
+    id="workName"
+    value=""
+  />
 
-    <input
-      id="workStartDate"
-      type="date"
-      value="2026-07-30"
-    />
+  <input
+    id="workStartDate"
+    type="date"
+    value=""
+  />
 
-    <input
-      id="safetyDays"
-      type="number"
-      value="2"
-      min="0"
-    />
-  </div>
+  <input
+    id="safetyDays"
+    type="number"
+    value="0"
+    min="0"
+  />
+</div>
 
-   <button id="recalcBtn" class="primary">
-    Пересчитать риски
-  </button>
+  <button
+  id="newCleanProjectBtn"
+  type="button"
+  class="secondary-btn"
+>
+  Новый чистый проект
+</button>
+
+<button id="recalcBtn" class="primary">
+  Пересчитать риски
+</button>
 </section>
 
 <section
@@ -374,14 +379,37 @@
     <section class="card">
       <section class="context-layout">
   <div class="card current-context-card">
-    <h2>Текущий контекст контроля</h2>
+   <h2>Текущий контекст контроля</h2>
 
-    <p><strong>Проект:</strong> <span id="currentProject">АСУДД 1</span></p>
-    <p><strong>Объект:</strong> <span id="currentObject">СВХ</span></p>
-    <p><strong>Работа:</strong> <span id="currentWork">Кабельная канализация на эстакаде ДВ-4</span></p>
-   <p><strong>Начало по ГПР:</strong> <span id="currentStartDate">2026-07-30</span></p>
-<p><strong>Окончание по ГПР:</strong> <span id="currentEndDate">2026-08-15</span></p>
-<p><strong>Страховой запас:</strong> <span id="currentSafetyDays">2 дня</span></p>
+<p>
+  <strong>Проект:</strong>
+  <span id="currentProject">—</span>
+</p>
+
+<p>
+  <strong>Объект:</strong>
+  <span id="currentObject">—</span>
+</p>
+
+<p>
+  <strong>Работа:</strong>
+  <span id="currentWork">—</span>
+</p>
+
+<p>
+  <strong>Начало по ГПР:</strong>
+  <span id="currentStartDate">—</span>
+</p>
+
+<p>
+  <strong>Окончание по ГПР:</strong>
+  <span id="currentEndDate">—</span>
+</p>
+
+<p>
+  <strong>Страховой запас:</strong>
+  <span id="currentSafetyDays">—</span>
+</p>
   </div>
 
  <div class="card work-contexts-card">
@@ -499,7 +527,7 @@
         <label>Срок поставки, дней<input id="newLead" type="number" value="1" /></label>
       </div>
       <button id="addBtn" class="primary">Добавить и пересчитать</button>
-      <button id="resetBtn" class="secondary">Сбросить к примеру</button>
+      <button id="resetBtn" class="secondary">Очистить материалы</button>
     </section>
   </main>
   <script type="module">
@@ -517,9 +545,9 @@
 <script src="roadKnowledgeBase.js?v=2"></script>
 <script src="planningRules.js?v=2"></script>
 <script src="engineeringAudit.js?v=1"></script>
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 <script src="assistantEngine.js?v=1"></script>
-<script src="workContexts.js?v=1"></script>
+<script src="workContexts.js?v=2"></script>
 <script src="workTaxonomy.js?v=1"></script>
 <script src="workMatcher.js?v=5"></script>
 <script src="workVolumeEngine.js?v=4"></script>
