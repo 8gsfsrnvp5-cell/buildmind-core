@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BuildMind Procurement MVP</title>
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <header class="topbar">
@@ -230,6 +230,149 @@
 </section>
 
 <section
+  id="projectCoreSection"
+  class="card project-core-card"
+>
+  <div class="project-core-header">
+    <div>
+      <span class="project-core-eyebrow">
+        PROJECT CORE · V1
+      </span>
+
+      <h2>Паспорт и структура проекта</h2>
+
+      <p class="muted">
+        Главный проект получает постоянный ID.
+        Связанные проекты, разделы и пакеты добавляются
+        внутрь него без перезаписи истории.
+      </p>
+    </div>
+
+    <div class="project-core-active-box">
+      <span>Активный узел анализа</span>
+      <strong id="projectCoreActiveLabel">—</strong>
+    </div>
+  </div>
+
+  <div class="project-core-grid">
+
+    <div class="project-core-panel">
+      <h3>Главный проект</h3>
+
+      <div id="projectCoreRootSummary"></div>
+
+      <div class="project-core-form-grid">
+        <label>
+          Шифр / код проекта
+
+          <input
+            id="projectCoreCode"
+            placeholder="Например: АСУДД-01"
+          />
+        </label>
+
+        <label>
+          Договор / контракт
+
+          <input
+            id="projectCoreContract"
+            placeholder="Номер договора — при наличии"
+          />
+        </label>
+      </div>
+
+      <button
+        type="button"
+        id="saveProjectCoreBtn"
+        class="primary project-core-save-btn"
+      >
+        Сохранить паспорт проекта
+      </button>
+    </div>
+
+
+    <div class="project-core-panel">
+      <div class="project-core-panel-head">
+        <h3>Связанные проекты / пакеты</h3>
+
+        <span class="project-core-count-badge">
+          <strong id="projectCoreLinkedCount">0</strong>
+        </span>
+      </div>
+
+      <div
+        id="projectCoreLinkedList"
+        class="project-core-linked-list"
+      ></div>
+
+      <div class="project-core-add-linked">
+
+        <label>
+          Название
+
+          <input
+            id="linkedProjectName"
+            placeholder="Например: Дорожное освещение"
+          />
+        </label>
+
+        <label>
+          Шифр / раздел
+
+          <input
+            id="linkedProjectCode"
+            placeholder="Например: РД-04-НО"
+          />
+        </label>
+
+        <label>
+          Объект / участок
+
+          <input
+            id="linkedProjectObject"
+            placeholder="Можно оставить пустым"
+          />
+        </label>
+
+        <button
+          type="button"
+          id="addLinkedProjectBtn"
+          class="secondary-btn"
+        >
+          + Добавить связанный проект
+        </button>
+
+      </div>
+    </div>
+
+  </div>
+
+
+  <div class="project-core-active-select-wrap">
+    <label>
+      Активный проект / пакет
+      для новых документов
+
+      <select id="projectCoreActiveNode">
+        <option value="">
+          Не выбран
+        </option>
+      </select>
+    </label>
+  </div>
+
+
+  <p
+    id="projectCoreMessage"
+    class="project-core-message"
+  >
+    Сохраните главный проект,
+    затем добавляйте связанные пакеты
+    по мере появления документации.
+  </p>
+</section>
+    
+<section
   id="projectDocumentsSection"
   class="card documents-card"
 >
@@ -319,152 +462,263 @@
 </section>
 
     <section
-  id="projectAnalysisSection"
-  class="card project-analysis-card"
+  id="documentRegistrySection"
+  class="card document-registry-card"
 >
-  <div class="project-analysis-header">
+  <div class="document-registry-header">
     <div>
-      <h2>Анализ проекта BuildMind</h2>
+      <span class="document-registry-eyebrow">
+        DOCUMENT REGISTRY · V1
+      </span>
+
+      <h2>Реестр документов и редакций</h2>
 
       <p class="muted">
-        Единая сводка данных, реально найденных
-        в загруженных документах.
+        Новая редакция не стирает предыдущую.
+        BuildMind хранит постоянный Document ID,
+        отдельный Revision ID и статус каждой версии.
       </p>
     </div>
 
-    <button
-      type="button"
-      id="projectAnalysisBtn"
-      class="primary project-analysis-btn"
-    >
-      Анализировать проект
-    </button>
+
+    <div class="document-registry-summary">
+
+      <div>
+        <strong id="documentRegistryDocumentsCount">
+          0
+        </strong>
+        <span>Документов</span>
+      </div>
+
+      <div>
+        <strong id="documentRegistryRevisionsCount">
+          0
+        </strong>
+        <span>Редакций</span>
+      </div>
+
+      <div>
+        <strong id="documentRegistryCurrentCount">
+          0
+        </strong>
+        <span>Действующих</span>
+      </div>
+
+      <div>
+        <strong id="documentRegistryReviewCount">
+          0
+        </strong>
+        <span>На проверке</span>
+      </div>
+
+    </div>
   </div>
 
-  <p
-    id="projectAnalysisStatus"
-    class="project-analysis-status"
-  >
-    Загрузите документы и запустите анализ проекта.
-  </p>
 
-  <div class="project-analysis-summary">
+  <div class="document-registry-flow">
+    <span>RECEIVED</span>
+    <b>→</b>
+    <span>UNDER REVIEW</span>
+    <b>→</b>
+    <span>CURRENT</span>
+    <b>→</b>
+    <span>SUPERSEDED / CANCELLED</span>
+  </div>
 
-    <div>
-      <strong id="projectAnalysisDocumentsCount">
-        0
-      </strong>
-      <span>Документы</span>
+
+  <div class="document-registry-form">
+
+    <div class="document-registry-form-grid">
+
+      <label>
+        Загруженный файл
+
+        <select id="documentRegistryUploadSelect">
+          <option value="">
+            Сначала загрузите файл выше
+          </option>
+        </select>
+      </label>
+
+
+      <label>
+        Режим регистрации
+
+        <select id="documentRegistryMode">
+          <option value="new">
+            Новый логический документ
+          </option>
+
+          <option value="revision">
+            Новая редакция существующего
+          </option>
+        </select>
+      </label>
+
+
+      <label
+        id="documentRegistryExistingWrap"
+        class="hidden"
+      >
+        Существующий документ
+
+        <select id="documentRegistryExistingDocument">
+          <option value="">
+            Выберите документ
+          </option>
+        </select>
+      </label>
+
+
+      <label>
+        Логическое название
+
+        <input
+          id="documentRegistryLogicalTitle"
+          placeholder="Например: Основной ВОР"
+        />
+      </label>
+
+
+      <label>
+        Тип документа
+
+        <select id="documentRegistryKind">
+          <option value="project-documentation">
+            Проектная / рабочая документация
+          </option>
+
+          <option value="work-volume">
+            Ведомость объёмов работ
+          </option>
+
+          <option value="schedule">
+            График производства работ
+          </option>
+
+          <option value="specification">
+            Спецификация
+          </option>
+
+          <option value="agreement">
+            Дополнительное соглашение
+          </option>
+
+          <option value="estimate">
+            Сметная документация
+          </option>
+
+          <option value="journal">
+            Журнал / ведомость
+          </option>
+
+          <option value="other">
+            Другой документ
+          </option>
+        </select>
+      </label>
+
+
+      <label>
+        Редакция
+
+        <input
+          id="documentRegistryRevisionLabel"
+          placeholder="Например: Rev.A, R2, Изм.1"
+        />
+      </label>
+
+
+      <label>
+        Характер изменения
+
+        <select
+          id="documentRegistryRelationType"
+          disabled
+        >
+          <option value="replaces">
+            Заменяет предыдущую редакцию
+          </option>
+
+          <option value="amends">
+            Изменяет / корректирует
+          </option>
+
+          <option value="cancels">
+            Отменяет
+          </option>
+        </select>
+      </label>
+
     </div>
 
-    <div>
-      <strong id="projectAnalysisWorksCount">
-        0
+
+    <div class="document-registry-projects-block">
+      <strong>
+        К каким проектам / пакетам
+        относится эта редакция
       </strong>
-      <span>Работы</span>
+
+      <div
+        id="documentRegistryProjectNodes"
+        class="document-registry-project-choices"
+      ></div>
     </div>
 
-    <div>
-      <strong id="projectAnalysisVolumesCount">
-        0
-      </strong>
-      <span>Допустимые объёмы</span>
-    </div>
 
-    <div>
-      <strong id="projectAnalysisMaterialsCount">
-        0
-      </strong>
-      <span>Материалы</span>
-    </div>
+    <label class="document-registry-notes-label">
+      Комментарий к редакции
 
-    <div>
-      <strong id="projectAnalysisMachineryCount">
-        0
-      </strong>
-      <span>Техника</span>
-    </div>
+      <textarea
+        id="documentRegistryNotes"
+        rows="3"
+        placeholder="Основание, письмо, допсоглашение, примечание инженера"
+      ></textarea>
+    </label>
 
-    <div>
-      <strong id="projectAnalysisReviewCount">
-        0
-      </strong>
-      <span>Требует проверки</span>
+
+    <div class="document-registry-form-actions">
+      <button
+        type="button"
+        id="registerDocumentRevisionBtn"
+        class="primary"
+      >
+        Зарегистрировать редакцию
+      </button>
+
+      <p
+        id="documentRegistryMessage"
+        class="document-registry-message"
+      >
+        Файл сначала регистрируется
+        как «Получен» и не становится
+        действующим автоматически.
+      </p>
     </div>
 
   </div>
 
-  <div class="project-analysis-disclaimer">
+
+  <div class="document-registry-warning">
     <strong>
-      Режим инженерной поддержки.
+      История не удаляется.
     </strong>
 
-    Результаты автоматически извлечены
-    из документов и не считаются
-    подтверждённым инженерным решением
-    до проверки ответственным специалистом.
+    При утверждении новой редакции
+    предыдущая действующая версия
+    получает статус «Заменён».
+
+    Метаданные сохраняются локально;
+    сам файл после перезагрузки браузера
+    потребуется выбрать повторно
+    для нового анализа.
   </div>
 
-  <details
-    class="project-analysis-group"
-    open
-  >
-    <summary>
-      Документы проекта
-    </summary>
 
-    <div
-      id="projectAnalysisDocuments"
-      class="project-analysis-list"
-    ></div>
-  </details>
-
-  <details
-    class="project-analysis-group"
-    open
-  >
-    <summary>
-      Найденные работы и объёмы
-    </summary>
-
-    <div
-      id="projectAnalysisWorks"
-      class="project-analysis-list"
-    ></div>
-  </details>
-
-  <details class="project-analysis-group">
-    <summary>
-      Материалы и строительные ресурсы
-    </summary>
-
-    <div
-      id="projectAnalysisMaterials"
-      class="project-analysis-list"
-    ></div>
-  </details>
-
-  <details class="project-analysis-group">
-    <summary>
-      Машины и механизмы
-    </summary>
-
-    <div
-      id="projectAnalysisMachinery"
-      class="project-analysis-list"
-    ></div>
-  </details>
-
-  <details class="project-analysis-group">
-    <summary>
-      Неопределённые строки
-    </summary>
-
-    <div
-      id="projectAnalysisUncertain"
-      class="project-analysis-list"
-    ></div>
-  </details>
+  <div
+    id="documentRegistryList"
+    class="document-registry-list"
+  ></div>
 </section>
     
 <section class="card assistant-card">
@@ -493,6 +747,7 @@
     Здесь появится ответ BuildMind.
   </div>
 </section>
+    
     <section class="card">
       <h2>Материалы</h2>
       <div class="table-wrap">
@@ -694,7 +949,12 @@
 <script src="roadKnowledgeBase.js?v=2"></script>
 <script src="planningRules.js?v=2"></script>
 <script src="engineeringAudit.js?v=1"></script>
-<script src="app.js?v=2"></script>
+
+<script src="app.js?v=3"></script>
+
+<script src="projectCore.js?v=1"></script>
+<script src="documentRegistry.js?v=1"></script>
+
 <script src="assistantEngine.js?v=1"></script>
 <script src="workContexts.js?v=2"></script>
 <script src="workTaxonomy.js?v=1"></script>
@@ -702,7 +962,6 @@
 <script src="workVolumeEngine.js?v=4"></script>
 <script src="workQuantityEngine.js?v=3"></script>
 <script src="planningEngine.js?v=4"></script>
-<script src="projectAnalysis.js?v=1"></script>
       
 </body>
 </html>
