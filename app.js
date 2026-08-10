@@ -1,62 +1,34 @@
-const STORAGE_KEY = 'buildmind-procurement-data-v1';
-
-const defaultMaterials = [
-  {
-    project: 'АСУДД 1', object: 'СВХ', work: 'Кабельная канализация на эстакаде ДВ-4', name: 'Труба 76', responsible: 'Снабженец', unit: 'м', need: 5800, stock: 0, reserved: 3000,
-    confirmed: 3000, deliveryDate: '2026-07-10', leadDays: 1
-  },
-  {
-    project: 'АСУДД 1', object: 'СВХ', work: 'Кабельная канализация на эстакаде ДВ-4', name: 'Уголок', responsible: 'Прораб', unit: 'шт', need: 2000, stock: 0, reserved: 1500,
-    confirmed: 1500, deliveryDate: '2026-07-11', leadDays: 2
-  },
-  {
-    project: 'АСУДД 1', object: 'СВХ', work: 'Кабельная канализация на эстакаде ДВ-4', name: 'Хомуты', responsible: 'Кладовщик', unit: 'шт', need: 4500, stock: 0, reserved: 2500,
-    confirmed: 2500, deliveryDate: '2026-07-10', leadDays: 1
-  }
-];
+const STORAGE_KEY =
+  'buildmind-procurement-data-v2-clean';
 
 let materials = loadMaterials();
 
 function loadMaterials() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved =
+    localStorage.getItem(
+      STORAGE_KEY
+    );
 
   if (!saved) {
-    return [...defaultMaterials];
+    return [];
   }
 
   try {
-    const parsed = JSON.parse(saved);
+    const parsed =
+      JSON.parse(saved);
+
     if (Array.isArray(parsed)) {
-  const migratedMaterials =
-    parsed.map(function (row) {
-      if (
-        row.work ===
-        'Кабельная канализация на эстакаде В4'
-      ) {
-        return {
-          ...row,
-          work:
-            'Кабельная канализация на эстакаде ДВ-4'
-        };
-      }
-
-      return row;
-    });
-
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify(migratedMaterials)
-  );
-
-  return migratedMaterials;
-}
+      return parsed;
+    }
   } catch (error) {
-    console.warn('Не удалось прочитать сохранённые данные BuildMind:', error);
+    console.warn(
+      'Не удалось прочитать сохранённые данные BuildMind:',
+      error
+    );
   }
 
-  return [...defaultMaterials];
+  return [];
 }
-
 function saveMaterials() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(materials));
 }
@@ -206,9 +178,14 @@ function normalizeControlValue(value) {
     .toLowerCase();
 }
 
+const CONTROL_WORK_CONTEXTS_STORAGE_KEY =
+  'buildmindWorkContexts-v2-clean';
+
 function getSavedWorkContextsForControl() {
   const savedContexts =
-    localStorage.getItem('buildmindWorkContexts');
+    localStorage.getItem(
+      CONTROL_WORK_CONTEXTS_STORAGE_KEY
+    );
 
   if (!savedContexts) {
     return [];
@@ -218,7 +195,9 @@ function getSavedWorkContextsForControl() {
     const parsedContexts =
       JSON.parse(savedContexts);
 
-    return Array.isArray(parsedContexts)
+    return Array.isArray(
+      parsedContexts
+    )
       ? parsedContexts
       : [];
   } catch (error) {
@@ -1147,12 +1126,50 @@ function clearAddForm() {
 }
 
 function resetMaterials() {
-  const confirmed = confirm('Сбросить материалы к стартовому примеру? Все добавленные материалы будут удалены.');
-  if (!confirmed) return;
+  const confirmed = confirm(
+    'Очистить все материалы? ' +
+    'Добавленные позиции будут удалены.'
+  );
 
-  materials = [...defaultMaterials];
+  if (!confirmed) {
+    return;
+  }
+
+  materials = [];
+
   saveMaterials();
   render();
+}
+
+
+function startCleanProject() {
+  const confirmed = confirm(
+    'Начать новый чистый проект?\n\n' +
+    'Будут очищены материалы, контексты работ, ' +
+    'решения по кандидатам и текущий список документов.'
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  localStorage.removeItem(
+    STORAGE_KEY
+  );
+
+  localStorage.removeItem(
+    CONTROL_WORK_CONTEXTS_STORAGE_KEY
+  );
+
+  localStorage.removeItem(
+    'buildmindActiveContextId-v2-clean'
+  );
+
+  localStorage.removeItem(
+    'buildmind-material-candidate-reviews-v2-clean'
+  );
+
+  window.location.reload();
 }
 
 function exportJson() {
@@ -1179,6 +1196,13 @@ document.getElementById('addBtn').addEventListener('click', addMaterial);
 document.getElementById('exportBtn').addEventListener('click', exportJson);
 document.getElementById('resetBtn').addEventListener('click', resetMaterials);
 
+document.getElementById(
+  'newCleanProjectBtn'
+).addEventListener(
+  'click',
+  startCleanProject
+);
+
 initializeOperationalControlCenter();
 render();
 
@@ -1187,7 +1211,7 @@ render();
    ================================================== */
 
 const MATERIAL_CANDIDATE_REVIEWS_KEY =
-  'buildmind-material-candidate-reviews-v1';
+  'buildmind-material-candidate-reviews-v2-clean';
 
 function loadMaterialCandidateReviews() {
   try {
