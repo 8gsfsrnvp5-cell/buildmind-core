@@ -7,42 +7,12 @@
 */
 
 const WORK_CONTEXTS_STORAGE_KEY =
-  'buildmindWorkContexts';
+  'buildmindWorkContexts-v2-clean';
 
 const ACTIVE_CONTEXT_STORAGE_KEY =
-  'buildmindActiveContextId';
+  'buildmindActiveContextId-v2-clean';
 
-const defaultWorkContexts = [
-  {
-    id: 'context-1',
-    project: 'АСУДД 1',
-    object: 'СВХ',
-    work:
-      'Кабельная канализация на эстакаде ДВ-4',
-    startDate: '2026-07-30',
-    endDate: '2026-08-15',
-    safetyDays: 2
-  },
-  {
-    id: 'context-2',
-    project: 'АСУДД 1',
-    object: 'ЮВХ',
-    work:
-      'Кабельная канализация на эстакаде В3',
-    startDate: '2026-08-05',
-    endDate: '2026-08-20',
-    safetyDays: 2
-  },
-  {
-    id: 'context-3',
-    project: 'АСУДД 1',
-    object: 'СВХ',
-    work: 'Монтаж кабеля',
-    startDate: '2026-08-12',
-    endDate: '2026-08-25',
-    safetyDays: 3
-  }
-];
+const defaultWorkContexts = [];
 
 let workContexts = [];
 
