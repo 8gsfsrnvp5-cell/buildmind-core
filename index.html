@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BuildMind Procurement MVP</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <header class="topbar">
@@ -318,6 +318,155 @@
   ></div>
 </section>
 
+    <section
+  id="projectAnalysisSection"
+  class="card project-analysis-card"
+>
+  <div class="project-analysis-header">
+    <div>
+      <h2>Анализ проекта BuildMind</h2>
+
+      <p class="muted">
+        Единая сводка данных, реально найденных
+        в загруженных документах.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      id="projectAnalysisBtn"
+      class="primary project-analysis-btn"
+    >
+      Анализировать проект
+    </button>
+  </div>
+
+  <p
+    id="projectAnalysisStatus"
+    class="project-analysis-status"
+  >
+    Загрузите документы и запустите анализ проекта.
+  </p>
+
+  <div class="project-analysis-summary">
+
+    <div>
+      <strong id="projectAnalysisDocumentsCount">
+        0
+      </strong>
+      <span>Документы</span>
+    </div>
+
+    <div>
+      <strong id="projectAnalysisWorksCount">
+        0
+      </strong>
+      <span>Работы</span>
+    </div>
+
+    <div>
+      <strong id="projectAnalysisVolumesCount">
+        0
+      </strong>
+      <span>Допустимые объёмы</span>
+    </div>
+
+    <div>
+      <strong id="projectAnalysisMaterialsCount">
+        0
+      </strong>
+      <span>Материалы</span>
+    </div>
+
+    <div>
+      <strong id="projectAnalysisMachineryCount">
+        0
+      </strong>
+      <span>Техника</span>
+    </div>
+
+    <div>
+      <strong id="projectAnalysisReviewCount">
+        0
+      </strong>
+      <span>Требует проверки</span>
+    </div>
+
+  </div>
+
+  <div class="project-analysis-disclaimer">
+    <strong>
+      Режим инженерной поддержки.
+    </strong>
+
+    Результаты автоматически извлечены
+    из документов и не считаются
+    подтверждённым инженерным решением
+    до проверки ответственным специалистом.
+  </div>
+
+  <details
+    class="project-analysis-group"
+    open
+  >
+    <summary>
+      Документы проекта
+    </summary>
+
+    <div
+      id="projectAnalysisDocuments"
+      class="project-analysis-list"
+    ></div>
+  </details>
+
+  <details
+    class="project-analysis-group"
+    open
+  >
+    <summary>
+      Найденные работы и объёмы
+    </summary>
+
+    <div
+      id="projectAnalysisWorks"
+      class="project-analysis-list"
+    ></div>
+  </details>
+
+  <details class="project-analysis-group">
+    <summary>
+      Материалы и строительные ресурсы
+    </summary>
+
+    <div
+      id="projectAnalysisMaterials"
+      class="project-analysis-list"
+    ></div>
+  </details>
+
+  <details class="project-analysis-group">
+    <summary>
+      Машины и механизмы
+    </summary>
+
+    <div
+      id="projectAnalysisMachinery"
+      class="project-analysis-list"
+    ></div>
+  </details>
+
+  <details class="project-analysis-group">
+    <summary>
+      Неопределённые строки
+    </summary>
+
+    <div
+      id="projectAnalysisUncertain"
+      class="project-analysis-list"
+    ></div>
+  </details>
+</section>
+    
 <section class="card assistant-card">
   <h2>Командное окно BuildMind</h2>
   <p class="muted">
@@ -553,6 +702,7 @@
 <script src="workVolumeEngine.js?v=4"></script>
 <script src="workQuantityEngine.js?v=3"></script>
 <script src="planningEngine.js?v=4"></script>
+<script src="projectAnalysis.js?v=1"></script>
       
 </body>
 </html>
