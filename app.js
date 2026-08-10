@@ -1143,9 +1143,10 @@ function resetMaterials() {
 
 
 function startCleanProject() {
-  const confirmed = confirm(
+    const confirmed = confirm(
     'Начать новый чистый проект?\n\n' +
     'Будут очищены материалы, контексты работ, ' +
+    'структура проекта, реестр редакций, ' +
     'решения по кандидатам и текущий список документов.'
   );
 
@@ -1165,8 +1166,16 @@ function startCleanProject() {
     'buildmindActiveContextId-v2-clean'
   );
 
-  localStorage.removeItem(
+    localStorage.removeItem(
     'buildmind-material-candidate-reviews-v2-clean'
+  );
+
+  localStorage.removeItem(
+    'buildmind-project-core-v1'
+  );
+
+  localStorage.removeItem(
+    'buildmind-document-registry-v1'
   );
 
   window.location.reload();
