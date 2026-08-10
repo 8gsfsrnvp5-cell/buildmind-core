@@ -2,7 +2,7 @@
 
 /*
   ==================================================
-  BUILDMIND WORK VOLUME ENGINE — DEMO V1
+  BUILDMIND WORK VOLUME ENGINE — DEMO V2.1
   ==================================================
 
   Читает XLSX / XLS / CSV, ищет таблицы вида
@@ -12,7 +12,7 @@
 */
 
 const BUILDMIND_WORK_VOLUME_ENGINE_VERSION =
-  'work-volume-engine-demo-v2';
+  'work-volume-engine-demo-v2.1';
 
 const WORK_VOLUME_SUPPORTED_EXTENSIONS = [
   'xlsx',
@@ -828,6 +828,536 @@ function classifyWorkVolumeCandidate(
   }
 }
 
+const WORK_VOLUME_ROW_CLASSIFICATION_RULES = {
+  summaryPrefixes: [
+    'итого',
+    'всего',
+    'в том числе',
+    'в т ч',
+    'итого по разделу',
+    'всего по разделу',
+    'итого по главе'
+  ],
+
+  sectionPrefixes: [
+    'раздел ',
+    'глава ',
+    'подраздел ',
+    'этап ',
+    'комплекс работ'
+  ],
+
+  workPrefixes: [
+    'устройство ',
+    'монтаж ',
+    'демонтаж ',
+    'прокладка ',
+    'укладка ',
+    'установка ',
+    'кладка ',
+    'бетонирование ',
+    'армирование ',
+    'сварка ',
+    'окраска ',
+    'покраска ',
+    'штукатурка ',
+    'оштукатуривание ',
+    'шпатлевание ',
+    'шпаклевание ',
+    'облицовка ',
+    'грунтование ',
+    'разработка грунта',
+    'обратная засыпка',
+    'засыпка ',
+    'уплотнение ',
+    'бурение ',
+    'резка ',
+    'сверление ',
+    'нанесение ',
+    'очистка ',
+    'изоляция ',
+    'гидроизоляция ',
+    'планировка ',
+    'разборка ',
+    'замена ',
+    'ремонт ',
+    'работы по '
+  ],
+
+  materialPrefixes: [
+    'раствор ',
+    'бетон ',
+    'цемент ',
+    'песок ',
+    'щебень ',
+    'кирпич ',
+    'блок ',
+    'арматура ',
+    'сталь ',
+    'труба ',
+    'кабель ',
+    'провод ',
+    'краска ',
+    'грунтовка ',
+    'герметик ',
+    'мастика ',
+    'утеплитель ',
+    'минеральная вата',
+    'минвата ',
+    'стекло ',
+    'лист ',
+    'профиль ',
+    'уголок ',
+    'хомут ',
+    'болт ',
+    'гайка ',
+    'шайба ',
+    'крепеж ',
+    'крепёж ',
+    'панель ',
+    'плита ',
+    'доска ',
+    'брус ',
+    'рубероид ',
+    'мембрана ',
+    'геотекстиль ',
+    'асфальтобетон ',
+    'битум '
+  ],
+
+  machineryPrefixes: [
+    'кран ',
+    'автокран ',
+    'экскаватор ',
+    'бульдозер ',
+    'погрузчик ',
+    'самосвал ',
+    'автосамосвал ',
+    'манипулятор ',
+    'автовышка ',
+    'подъемник ',
+    'подъёмник ',
+    'компрессор ',
+    'виброплита ',
+    'каток ',
+    'машина ',
+    'механизм ',
+    'буровая установка',
+    'установка буровая'
+  ]
+};
+
+
+function workVolumeTextStartsWithAny(
+  value,
+  phrases
+) {
+  const normalized =
+    normalizeWorkVolumeText(
+      value
+    );
+
+  return phrases.find(
+    function (phrase) {
+      return normalized.startsWith(
+        normalizeWorkVolumeText(
+          phrase
+        )
+      );
+    }
+  ) || null;
+}
+
+
+function classifyWorkVolumeRowCandidate(
+  candidateData
+) {
+  const data =
+    candidateData &&
+    typeof candidateData ===
+      'object'
+      ? candidateData
+      : {};
+
+  const workName =
+    cleanWorkVolumeWorkName(
+      data.workName
+    );
+
+  const normalizedName =
+    normalizeWorkVolumeText(
+      workName
+    );
+
+  const taxonomy =
+    data.taxonomy ||
+    null;
+
+  const baseResult = {
+    rowType:
+      'uncertain',
+
+    rowLabel:
+      'Тип строки требует проверки',
+
+    confidence: {
+      level:
+        'low',
+
+      label:
+        'Низкая'
+    },
+
+    evidence:
+      [],
+
+    eligibleForAutomaticWorkVolume:
+      false
+  };
+
+
+  if (!normalizedName) {
+    return baseResult;
+  }
+
+
+  /*
+    ==============================================
+    ИТОГОВЫЕ СТРОКИ
+    ==============================================
+  */
+
+  const summaryMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      WORK_VOLUME_ROW_CLASSIFICATION_RULES
+        .summaryPrefixes
+    );
+
+  if (summaryMarker) {
+    return {
+      rowType:
+        'summary',
+
+      rowLabel:
+        'Итоговая строка',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence: [
+        summaryMarker
+      ],
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    РАЗДЕЛЫ / ГРУППЫ
+    ==============================================
+  */
+
+  const sectionMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      WORK_VOLUME_ROW_CLASSIFICATION_RULES
+        .sectionPrefixes
+    );
+
+  if (sectionMarker) {
+    return {
+      rowType:
+        'section',
+
+      rowLabel:
+        'Раздел / группа работ',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence: [
+        sectionMarker
+      ],
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    СИЛЬНЫЙ ПРИЗНАК ТЕХНИКИ
+
+    Проверяем раньше "установка",
+    потому что выражение
+    "установка буровая" — это техника,
+    а "установка светильников" — работа.
+    ==============================================
+  */
+
+  const strongMachineryMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      [
+        'буровая установка',
+        'установка буровая'
+      ]
+    );
+
+  if (strongMachineryMarker) {
+    return {
+      rowType:
+        'machinery',
+
+      rowLabel:
+        'Машина / механизм',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence: [
+        strongMachineryMarker
+      ],
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    РАБОТА
+
+    Источники:
+    - характерное начало строки;
+    - успешное совпадение Work Taxonomy.
+    ==============================================
+  */
+
+  const taxonomyLooksLikeWork =
+    Boolean(
+      taxonomy &&
+      (
+        taxonomy.success ===
+          true ||
+        taxonomy.family ||
+        taxonomy.workFamily
+      )
+    );
+
+  const workMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      WORK_VOLUME_ROW_CLASSIFICATION_RULES
+        .workPrefixes
+    );
+
+  if (
+    workMarker ||
+    taxonomyLooksLikeWork
+  ) {
+    return {
+      rowType:
+        'work',
+
+      rowLabel:
+        'Строительная работа',
+
+      confidence: {
+        level:
+          workMarker
+            ? 'high'
+            : 'medium',
+
+        label:
+          workMarker
+            ? 'Высокая'
+            : 'Средняя'
+      },
+
+      evidence:
+        [
+          workMarker
+            ? (
+                'признак работы: ' +
+                workMarker
+              )
+            : '',
+
+          taxonomyLooksLikeWork
+            ? 'совпадение Work Taxonomy'
+            : ''
+        ].filter(Boolean),
+
+      eligibleForAutomaticWorkVolume:
+        true
+    };
+  }
+
+
+  /*
+    ==============================================
+    МАТЕРИАЛ
+    ==============================================
+  */
+
+  const materialMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      WORK_VOLUME_ROW_CLASSIFICATION_RULES
+        .materialPrefixes
+    );
+
+  if (materialMarker) {
+    return {
+      rowType:
+        'material',
+
+      rowLabel:
+        'Материал / строительный ресурс',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence: [
+        materialMarker
+      ],
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    ТЕХНИКА / МЕХАНИЗМ
+    ==============================================
+  */
+
+  const machineryMarker =
+    workVolumeTextStartsWithAny(
+      normalizedName,
+      WORK_VOLUME_ROW_CLASSIFICATION_RULES
+        .machineryPrefixes
+    );
+
+  if (machineryMarker) {
+    return {
+      rowType:
+        'machinery',
+
+      rowLabel:
+        'Машина / механизм',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence: [
+        machineryMarker
+      ],
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    НЕОПРЕДЕЛЁННАЯ СТРОКА
+
+    Не выдумываем тип.
+    Требуется дальнейшая проверка.
+    ==============================================
+  */
+
+  return baseResult;
+}
+
+
+function getWorkVolumeRowTypeCounts(
+  candidates
+) {
+  const counts = {
+    work:
+      0,
+
+    material:
+      0,
+
+    machinery:
+      0,
+
+    section:
+      0,
+
+    summary:
+      0,
+
+    uncertain:
+      0
+  };
+
+  (
+    Array.isArray(candidates)
+      ? candidates
+      : []
+  ).forEach(
+    function (candidate) {
+      const rowType =
+        candidate &&
+        candidate.rowType
+          ? candidate.rowType
+          : 'uncertain';
+
+      if (
+        Object.prototype
+          .hasOwnProperty.call(
+            counts,
+            rowType
+          )
+      ) {
+        counts[rowType] += 1;
+      } else {
+        counts.uncertain += 1;
+      }
+    }
+  );
+
+  return counts;
+}
 
 function analyzeWorkVolumeRows(
   rows,
@@ -940,6 +1470,19 @@ function analyzeWorkVolumeRows(
       continue;
     }
 
+        const taxonomy =
+      classifyWorkVolumeCandidate(
+        workName
+      );
+
+    const rowClassification =
+      classifyWorkVolumeRowCandidate({
+        workName,
+        quantity,
+        unit,
+        taxonomy
+      });
+
     candidates.push({
       workName,
 
@@ -947,7 +1490,7 @@ function analyzeWorkVolumeRows(
 
       unit,
 
-            sourceType:
+      sourceType:
         tableClassification.id ===
           'work-volume'
           ? 'work-volume'
@@ -965,11 +1508,30 @@ function analyzeWorkVolumeRows(
       tableEvidence:
         tableClassification.evidence,
 
+      rowType:
+        rowClassification.rowType,
+
+      rowLabel:
+        rowClassification.rowLabel,
+
+      rowConfidence:
+        rowClassification.confidence,
+
+      rowEvidence:
+        rowClassification.evidence,
+
       automaticWorkVolumeAllowed:
-        tableClassification
-          .eligibleForAutomaticWorkVolume,
+        Boolean(
+          tableClassification
+            .eligibleForAutomaticWorkVolume ===
+            true &&
+          rowClassification
+            .eligibleForAutomaticWorkVolume ===
+            true
+        ),
 
       sourceDocument,
+
       sourceSheet,
 
       sourceRow:
@@ -981,10 +1543,7 @@ function analyzeWorkVolumeRows(
       headerConfidence:
         header.confidence,
 
-      taxonomy:
-        classifyWorkVolumeCandidate(
-          workName
-        ),
+      taxonomy,
 
       decisionStatus:
         'requires-review',
@@ -1000,7 +1559,22 @@ function analyzeWorkVolumeRows(
       break;
     }
   }
+  const rowTypeCounts =
+    getWorkVolumeRowTypeCounts(
+      candidates
+    );
 
+  const automaticWorkVolumeCandidatesCount =
+    candidates.filter(
+      function (candidate) {
+        return (
+          candidate
+            .automaticWorkVolumeAllowed ===
+          true
+        );
+      }
+    ).length;
+  
   return {
     success:
       candidates.length > 0,
@@ -1008,11 +1582,15 @@ function analyzeWorkVolumeRows(
     version:
       BUILDMIND_WORK_VOLUME_ENGINE_VERSION,
 
-    sourceDocument,
+        sourceDocument,
 
     sourceSheet,
 
     tableClassification,
+
+    rowTypeCounts,
+
+    automaticWorkVolumeCandidatesCount,
 
     header: {
       sourceRow:
@@ -1162,9 +1740,18 @@ function analyzeWorkVolumeWorkbook(
           result.header ||
           null,
 
-        tableClassification:
+                tableClassification:
           result.tableClassification ||
           null,
+
+        rowTypeCounts:
+          result.rowTypeCounts ||
+          null,
+
+        automaticWorkVolumeCandidatesCount:
+          result
+            .automaticWorkVolumeCandidatesCount ||
+          0,
 
         candidatesCount:
           result.candidatesCount ||
@@ -1991,6 +2578,9 @@ window.BuildMindWorkVolume = {
 
   classifyRows:
     classifyWorkVolumeTable,
+
+  classifyCandidate:
+    classifyWorkVolumeRowCandidate,
 
   analyzeRows:
     analyzeWorkVolumeRows,
