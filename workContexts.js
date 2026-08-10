@@ -264,6 +264,7 @@ function clearCurrentWorkContext() {
     '—'
   );
 
+
   setInputValue(
     'newProject',
     ''
@@ -277,6 +278,28 @@ function clearCurrentWorkContext() {
   setInputValue(
     'newWork',
     ''
+  );
+
+
+  /*
+    Временные технические поля.
+    В чистом проекте они тоже
+    не должны содержать старую работу.
+  */
+
+  setInputValue(
+    'workName',
+    ''
+  );
+
+  setInputValue(
+    'workStartDate',
+    ''
+  );
+
+  setInputValue(
+    'safetyDays',
+    '0'
   );
 }
 
