@@ -12,7 +12,7 @@
 */
 
 const BUILDMIND_WORK_VOLUME_ENGINE_VERSION =
-  'work-volume-engine-demo-v1';
+  'work-volume-engine-demo-v2';
 
 const WORK_VOLUME_SUPPORTED_EXTENSIONS = [
   'xlsx',
@@ -21,7 +21,7 @@ const WORK_VOLUME_SUPPORTED_EXTENSIONS = [
 ];
 
 const WORK_VOLUME_HEADER_RULES = {
-  work: [
+    work: [
     'наименование работ и затрат',
     'наименование работ',
     'наименование работы',
@@ -29,7 +29,8 @@ const WORK_VOLUME_HEADER_RULES = {
     'вид работы',
     'перечень работ',
     'описание работ',
-    'работа'
+    'работа',
+    'наименование'
   ],
 
   unit: [
@@ -164,6 +165,354 @@ function cleanWorkVolumeWorkName(
     .trim();
 }
 
+const WORK_VOLUME_TABLE_CLASSIFICATION_RULES = {
+  workVolume: [
+    'ведомость объемов работ',
+    'ведомость объёмов работ',
+    'ведомость работ',
+    'виды и объемы работ',
+    'виды и объёмы работ',
+    'наименование работ',
+    'объем работ',
+    'объём работ'
+  ],
+
+  mixedWorkMaterialPrice: [
+    'материалы и работы',
+    'стоимость ед',
+    'стоимость',
+    'ндс',
+    'цены'
+  ],
+
+  material: [
+    'ведомость материалов',
+    'спецификация материалов',
+    'материал',
+    'материалы'
+  ],
+
+  schedule: [
+    'график производства работ',
+    'календарный график',
+    'начало работ',
+    'окончание работ',
+    'продолжительность'
+  ]
+};
+
+
+function collectWorkVolumeTableText(
+  rows,
+  options
+) {
+  const settings =
+    options &&
+    typeof options ===
+      'object'
+      ? options
+      : {};
+
+  const sourceRows =
+    Array.isArray(rows)
+      ? rows
+      : [];
+
+  const rowText =
+    sourceRows
+      .slice(0, 40)
+      .flatMap(
+        function (row) {
+          return Array.isArray(row)
+            ? row
+            : [];
+        }
+      )
+      .map(
+        normalizeWorkVolumeText
+      )
+      .filter(Boolean)
+      .join(' ');
+
+  return normalizeWorkVolumeText(
+    [
+      settings.sourceDocument || '',
+      settings.sourceSheet || '',
+      rowText
+    ].join(' ')
+  );
+}
+
+
+function findWorkVolumeTableEvidence(
+  fullText,
+  phrases
+) {
+  const source =
+    normalizeWorkVolumeText(
+      fullText
+    );
+
+  return phrases.filter(
+    function (phrase) {
+      const normalizedPhrase =
+        normalizeWorkVolumeText(
+          phrase
+        );
+
+      return (
+        normalizedPhrase &&
+        source.includes(
+          normalizedPhrase
+        )
+      );
+    }
+  );
+}
+
+
+function classifyWorkVolumeTable(
+  rows,
+  options
+) {
+  const fullText =
+    collectWorkVolumeTableText(
+      rows,
+      options
+    );
+
+  const workEvidence =
+    findWorkVolumeTableEvidence(
+      fullText,
+      WORK_VOLUME_TABLE_CLASSIFICATION_RULES
+        .workVolume
+    );
+
+  const mixedEvidence =
+    findWorkVolumeTableEvidence(
+      fullText,
+      WORK_VOLUME_TABLE_CLASSIFICATION_RULES
+        .mixedWorkMaterialPrice
+    );
+
+  const materialEvidence =
+    findWorkVolumeTableEvidence(
+      fullText,
+      WORK_VOLUME_TABLE_CLASSIFICATION_RULES
+        .material
+    );
+
+  const scheduleEvidence =
+    findWorkVolumeTableEvidence(
+      fullText,
+      WORK_VOLUME_TABLE_CLASSIFICATION_RULES
+        .schedule
+    );
+
+  const hasPriceStructure =
+    mixedEvidence.some(
+      function (phrase) {
+        return (
+          phrase === 'стоимость' ||
+          phrase === 'стоимость ед' ||
+          phrase === 'ндс' ||
+          phrase === 'цены'
+        );
+      }
+    );
+
+  const hasMixedPhrase =
+    mixedEvidence.includes(
+      'материалы и работы'
+    );
+
+
+  /*
+    ==============================================
+    СМЕШАННАЯ ТАБЛИЦА
+
+    Например:
+    "материалы и работы"
+    + цена
+    + стоимость
+    + НДС
+
+    Разбираем строки,
+    но автоматически объёмом работы
+    их не считаем.
+    ==============================================
+  */
+
+  if (
+    hasMixedPhrase &&
+    hasPriceStructure
+  ) {
+    return {
+      id:
+        'mixed-work-material-price-table',
+
+      label:
+        'Смешанная ведомость материалов и работ',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence:
+        Array.from(
+          new Set(
+            mixedEvidence
+          )
+        ),
+
+      allowGenericNameHeader:
+        true,
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    ГПР / КАЛЕНДАРНАЯ ТАБЛИЦА
+    ==============================================
+  */
+
+  if (
+    scheduleEvidence.length >= 2
+  ) {
+    return {
+      id:
+        'schedule-table',
+
+      label:
+        'График / календарная таблица работ',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence:
+        scheduleEvidence,
+
+      allowGenericNameHeader:
+        false,
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  /*
+    ==============================================
+    ВЕДОМОСТЬ РАБОТ / ОБЪЁМОВ
+    ==============================================
+  */
+
+  if (
+    workEvidence.length >= 1 &&
+    !hasPriceStructure
+  ) {
+    return {
+      id:
+        'work-volume',
+
+      label:
+        'Ведомость работ / объёмов работ',
+
+      confidence: {
+        level:
+          'high',
+
+        label:
+          'Высокая'
+      },
+
+      evidence:
+        workEvidence,
+
+      allowGenericNameHeader:
+        true,
+
+      eligibleForAutomaticWorkVolume:
+        true
+    };
+  }
+
+
+  /*
+    ==============================================
+    ТАБЛИЦА МАТЕРИАЛОВ
+    ==============================================
+  */
+
+  if (
+    materialEvidence.length >= 1 &&
+    workEvidence.length === 0
+  ) {
+    return {
+      id:
+        'material-table',
+
+      label:
+        'Таблица материалов',
+
+      confidence: {
+        level:
+          'medium',
+
+        label:
+          'Средняя'
+      },
+
+      evidence:
+        materialEvidence,
+
+      allowGenericNameHeader:
+        false,
+
+      eligibleForAutomaticWorkVolume:
+        false
+    };
+  }
+
+
+  return {
+    id:
+      'unknown-table',
+
+    label:
+      'Тип таблицы не определён',
+
+    confidence: {
+      level:
+        'low',
+
+      label:
+        'Низкая'
+    },
+
+    evidence:
+      [],
+
+    allowGenericNameHeader:
+      false,
+
+    eligibleForAutomaticWorkVolume:
+      false
+  };
+}
 
 function scoreWorkVolumeHeaderCell(
   cellValue,
@@ -224,7 +573,8 @@ function scoreWorkVolumeHeaderCell(
 
 
 function mapWorkVolumeHeaderRow(
-  row
+  row,
+  tableClassification
 ) {
   const cells =
     Array.isArray(row)
@@ -232,13 +582,26 @@ function mapWorkVolumeHeaderRow(
       : [];
 
   const result = {
-    workColumn: null,
-    unitColumn: null,
-    quantityColumn: null,
-    workScore: 0,
-    unitScore: 0,
-    quantityScore: 0,
-    score: 0
+    workColumn:
+      null,
+
+    unitColumn:
+      null,
+
+    quantityColumn:
+      null,
+
+    workScore:
+      0,
+
+    unitScore:
+      0,
+
+    quantityScore:
+      0,
+
+    score:
+      0
   };
 
   cells.forEach(
@@ -246,11 +609,40 @@ function mapWorkVolumeHeaderRow(
       cellValue,
       columnIndex
     ) {
-      const workScore =
+      let workScore =
         scoreWorkVolumeHeaderCell(
           cellValue,
           WORK_VOLUME_HEADER_RULES.work
         );
+
+      const normalizedCell =
+        normalizeWorkVolumeText(
+          cellValue
+        );
+
+
+      /*
+        Слово "Наименование" слишком общее.
+
+        Оно разрешается как колонка работы
+        только если классификатор уже понял,
+        что таблица действительно относится
+        к работам или смешанным работам /
+        материалам.
+      */
+
+      if (
+        normalizedCell ===
+          'наименование' &&
+        !(
+          tableClassification &&
+          tableClassification
+            .allowGenericNameHeader
+        )
+      ) {
+        workScore = 0;
+      }
+
 
       if (
         workScore >
@@ -262,6 +654,7 @@ function mapWorkVolumeHeaderRow(
         result.workColumn =
           columnIndex;
       }
+
 
       const unitScore =
         scoreWorkVolumeHeaderCell(
@@ -279,6 +672,7 @@ function mapWorkVolumeHeaderRow(
         result.unitColumn =
           columnIndex;
       }
+
 
       const quantityScore =
         scoreWorkVolumeHeaderCell(
@@ -299,10 +693,12 @@ function mapWorkVolumeHeaderRow(
     }
   );
 
+
   result.score =
     result.workScore +
     result.unitScore +
     result.quantityScore;
+
 
   return result;
 }
@@ -333,7 +729,8 @@ function getWorkVolumeHeaderConfidence(
 
 
 function findWorkVolumeHeader(
-  rows
+  rows,
+  tableClassification
 ) {
   const sourceRows =
     Array.isArray(rows)
@@ -346,7 +743,9 @@ function findWorkVolumeHeader(
       40
     );
 
-  let best = null;
+  let best =
+    null;
+
 
   for (
     let rowIndex = 0;
@@ -355,24 +754,29 @@ function findWorkVolumeHeader(
   ) {
     const mapped =
       mapWorkVolumeHeaderRow(
-        sourceRows[rowIndex]
+        sourceRows[rowIndex],
+        tableClassification
       );
 
     const complete =
       Boolean(
-        mapped.workColumn !== null &&
-        mapped.unitColumn !== null &&
-        mapped.quantityColumn !== null
+        mapped.workColumn !==
+          null &&
+        mapped.unitColumn !==
+          null &&
+        mapped.quantityColumn !==
+          null
       );
 
     if (!complete) {
       continue;
     }
 
+
     if (
       !best ||
       mapped.score >
-      best.score
+        best.score
     ) {
       best = {
         ...mapped,
@@ -389,6 +793,7 @@ function findWorkVolumeHeader(
       };
     }
   }
+
 
   return best;
 }
@@ -444,13 +849,23 @@ function analyzeWorkVolumeRows(
     settings.sourceDocument ||
     '';
 
-  const sourceSheet =
+    const sourceSheet =
     settings.sourceSheet ||
     '';
 
+  const tableClassification =
+    classifyWorkVolumeTable(
+      sourceRows,
+      {
+        sourceDocument,
+        sourceSheet
+      }
+    );
+
   const header =
     findWorkVolumeHeader(
-      sourceRows
+      sourceRows,
+      tableClassification
     );
 
   if (!header) {
@@ -467,8 +882,10 @@ function analyzeWorkVolumeRows(
 
       sourceSheet,
 
-      candidates: [],
+      tableClassification,
 
+      candidates: [],
+      
       requiresEngineerConfirmation:
         true
     };
@@ -530,11 +947,29 @@ function analyzeWorkVolumeRows(
 
       unit,
 
-      sourceType:
-        'work-volume',
+            sourceType:
+        tableClassification.id ===
+          'work-volume'
+          ? 'work-volume'
+          : tableClassification.id,
+
+      tableType:
+        tableClassification.id,
+
+      tableLabel:
+        tableClassification.label,
+
+      tableConfidence:
+        tableClassification.confidence,
+
+      tableEvidence:
+        tableClassification.evidence,
+
+      automaticWorkVolumeAllowed:
+        tableClassification
+          .eligibleForAutomaticWorkVolume,
 
       sourceDocument,
-
       sourceSheet,
 
       sourceRow:
@@ -576,6 +1011,8 @@ function analyzeWorkVolumeRows(
     sourceDocument,
 
     sourceSheet,
+
+    tableClassification,
 
     header: {
       sourceRow:
@@ -721,8 +1158,12 @@ function analyzeWorkVolumeWorkbook(
           result.errorCode ||
           null,
 
-        header:
+               header:
           result.header ||
+          null,
+
+        tableClassification:
+          result.tableClassification ||
           null,
 
         candidatesCount:
@@ -1323,7 +1764,12 @@ async function findBuildMindWorkVolume(
             match.coverage,
 
           eligibleForWorkVolume:
-            contextScore >= 55
+            Boolean(
+              candidate
+                .automaticWorkVolumeAllowed ===
+                true &&
+              contextScore >= 55
+            )
         });
       }
     );
@@ -1409,8 +1855,17 @@ async function findBuildMindWorkVolume(
     unit:
       bestCandidate.unit,
 
-    sourceType:
-      'work-volume',
+        sourceType:
+      bestCandidate.sourceType,
+
+    tableType:
+      bestCandidate.tableType,
+
+    tableLabel:
+      bestCandidate.tableLabel,
+
+    tableConfidence:
+      bestCandidate.tableConfidence,
 
     sourceDocument:
       bestCandidate.sourceDocument,
@@ -1533,6 +1988,9 @@ function getBuildMindWorkVolumeSummary() {
 window.BuildMindWorkVolume = {
   version:
     BUILDMIND_WORK_VOLUME_ENGINE_VERSION,
+
+  classifyRows:
+    classifyWorkVolumeTable,
 
   analyzeRows:
     analyzeWorkVolumeRows,
