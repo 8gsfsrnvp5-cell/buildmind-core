@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BuildMind Procurement MVP</title>
-  <link rel="stylesheet" href="style.css?v=4" />
+  <title>BuildMind · Инженерный контроль проекта</title>
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
   <header class="topbar">
     <div>
-      <h1>BuildMind Procurement MVP</h1>
-      <p>Панель контроля закупок и рисков по строительным материалам</p>
+      <h1>BuildMind</h1>
+<p>Инженерный контроль документов, работ, материалов, сроков и рисков проекта</p>
     </div>
     <button id="exportBtn">Скачать JSON</button>
   </header>
@@ -239,7 +239,7 @@
   <div class="project-core-header">
     <div>
       <span class="project-core-eyebrow">
-        PROJECT CORE · V1
+        СТРУКТУРА ПРОЕКТА · V1
       </span>
 
       <h2>Паспорт и структура проекта</h2>
@@ -381,14 +381,14 @@
 >
   <div class="documents-header">
     <div>
-      <h2>Проектные документы и ГПР</h2>
+      <h2>Загруженные документы</h2>
 
-      <p class="muted">
-        Загрузите проектные PDF, спецификации,
-        ведомости материалов и график производства работ.
-        На следующем этапе BuildMind начнёт определять
-        тип документа и извлекать данные.
-      </p>
+<p class="muted">
+  Здесь остаются файлы текущей браузерной сессии: проектная
+  документация, ВОР, ГПР, спецификации, сметы, коммерческие
+  предложения и связанные документы. Автоматический анализ
+  выполняется в блоке выше.
+</p>
     </div>
 
     <span
@@ -471,16 +471,16 @@
   <div class="document-registry-header">
     <div>
       <span class="document-registry-eyebrow">
-        DOCUMENT REGISTRY · V1
+        ДОКУМЕНТЫ ПРОЕКТА · V1
       </span>
 
       <h2>Реестр документов и редакций</h2>
 
       <p class="muted">
-        Новая редакция не стирает предыдущую.
-        BuildMind хранит постоянный Document ID,
-        отдельный Revision ID и статус каждой версии.
-      </p>
+  Новая редакция не стирает предыдущую.
+  BuildMind сохраняет историю документа и статус
+  каждой полученной редакции.
+</p>
     </div>
 
 
@@ -519,14 +519,14 @@
 
 
   <div class="document-registry-flow">
-    <span>RECEIVED</span>
-    <b>→</b>
-    <span>UNDER REVIEW</span>
-    <b>→</b>
-    <span>CURRENT</span>
-    <b>→</b>
-    <span>SUPERSEDED / CANCELLED</span>
-  </div>
+  <span>ПОЛУЧЕН</span>
+  <b>→</b>
+  <span>НА ПРОВЕРКЕ</span>
+  <b>→</b>
+  <span>ДЕЙСТВУЮЩИЙ</span>
+  <b>→</b>
+  <span>ЗАМЕНЁН / АННУЛИРОВАН</span>
+</div>
 
 
   <div class="document-registry-form">
@@ -608,10 +608,14 @@
           </option>
 
           <option value="estimate">
-            Сметная документация
-          </option>
+  Сметная документация
+</option>
 
-          <option value="journal">
+<option value="commercial-proposal">
+  Коммерческое предложение
+</option>
+
+<option value="journal">
             Журнал / ведомость
           </option>
 
@@ -627,7 +631,7 @@
 
         <input
           id="documentRegistryRevisionLabel"
-          placeholder="Например: Rev.A, R2, Изм.1"
+          placeholder="Например: Изм.1, Редакция 2, Версия 3"
         />
       </label>
 
@@ -954,15 +958,17 @@
 </script>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+  <script src="i18n.js?v=1"></script>
   
 <script src="roadKnowledgeBase.js?v=2"></script>
 <script src="planningRules.js?v=2"></script>
 <script src="engineeringAudit.js?v=1"></script>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 
 <script src="projectCore.js?v=1"></script>
-<script src="documentRegistry.js?v=2"></script>
+<script src="documentRegistry.js?v=3"></script>
 
 <script src="assistantEngine.js?v=1"></script>
 <script src="workContexts.js?v=2"></script>
@@ -972,7 +978,8 @@
 <script src="workQuantityEngine.js?v=3"></script>
 <script src="planningEngine.js?v=4"></script>
 
-<script src="workspace.js?v=1"></script>
+<script src="projectIntake.js?v=1"></script>
+<script src="workspace.js?v=2"></script>
       
 </body>
 </html>
