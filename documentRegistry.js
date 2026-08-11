@@ -34,6 +34,9 @@ const DOCUMENT_REGISTRY_KIND_LABELS = {
   estimate:
     'Сметная документация',
 
+   'commercial-proposal':
+  'Коммерческое предложение',
+
   journal:
     'Журнал / ведомость',
 
@@ -351,6 +354,12 @@ function guessDocumentRegistryKind(
     estimate:
       'estimate',
 
+'commercial-proposal':
+  'commercial-proposal',
+
+agreement:
+  'agreement',
+     
     'cable-journal':
       'journal'
   };
@@ -404,6 +413,27 @@ function guessDocumentRegistryKind(
     return 'agreement';
   }
 
+   if (
+  name.includes(
+    'коммерч'
+  ) ||
+  name.includes(
+    'ткп'
+  ) ||
+  /(^|[^а-яa-z0-9])кп([^а-яa-z0-9]|$)/i.test(
+    name
+  )
+) {
+  return 'commercial-proposal';
+}
+
+if (
+  name.includes(
+    'смет'
+  )
+) {
+  return 'estimate';
+}
 
   if (
     name.endsWith(
@@ -1014,7 +1044,7 @@ function syncRegistryFormFromExisting() {
   setDocumentRegistryMessage(
     'Новая редакция будет добавлена в документ «' +
     documentItem.logicalTitle +
-    '». Document ID останется прежним.'
+    '».ID документ останется прежним.'
   );
 }
 
@@ -1318,7 +1348,7 @@ async function registerDocumentRevision() {
         'как продолжение существующего документа: «' +
         revisionLabelInput +
         '».\n\n' +
-        'Если это Rev.B / R2 / Изм.1 существующего документа, ' +
+        'Если это новая редакция существующего документа, ' +
         'нажмите «Отмена» и выберите режим «Новая редакция существующего».'
       );
 
@@ -1990,7 +2020,7 @@ function renderDocumentRegistry() {
                         </p>
 
                         <small>
-                          Revision ID:
+                          ID редакции:
                           ${escapeDocumentRegistryHtml(
                             revision.revisionId
                           )}
