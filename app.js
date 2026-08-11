@@ -1519,6 +1519,31 @@ function applySavedMaterialCandidateReview(
 
 let uploadedProjectDocuments = [];
 
+function notifyProjectDocumentsChanged(
+  action,
+  documentIds
+) {
+  window.dispatchEvent(
+    new CustomEvent(
+      'buildmind:project-documents-changed',
+      {
+        detail: {
+          action:
+            action || 'updated',
+
+          documentIds:
+            Array.isArray(documentIds)
+              ? [...documentIds]
+              : [],
+
+          documentsCount:
+            uploadedProjectDocuments.length
+        }
+      }
+    )
+  );
+}
+
 let pendingMaterialCandidateImport =
   null;
 
@@ -2558,15 +2583,28 @@ function addProjectDocuments(fileList) {
 
     if (!alreadyExists) {
       uploadedProjectDocuments.push({
-        id,
-        file,
-        status: 'waiting'
-      });
+  id,
+  file,
+  status: 'waiting'
+});
+
+addedDocumentIds.push(
+  id
+);
     }
   });
 
   renderProjectDocuments();
 
+if (
+  addedDocumentIds.length > 0
+) {
+  notifyProjectDocumentsChanged(
+    'added',
+    addedDocumentIds
+  );
+}
+  
   const message =
     document.getElementById(
       'documentsMessage'
@@ -2636,13 +2674,26 @@ function initializeProjectDocuments() {
     }
   );
 
-  clearButton.addEventListener(
-    'click',
-    function () {
-      uploadedProjectDocuments = [];
-      renderProjectDocuments();
-    }
-  );
+ clearButton.addEventListener(
+  'click',
+  function () {
+    const removedDocumentIds =
+      uploadedProjectDocuments.map(
+        function (documentItem) {
+          return documentItem.id;
+        }
+      );
+
+    uploadedProjectDocuments = [];
+
+    renderProjectDocuments();
+
+    notifyProjectDocumentsChanged(
+      'cleared',
+      removedDocumentIds
+    );
+  }
+);
 
   list.addEventListener(
     'click',
@@ -2660,16 +2711,21 @@ function initializeProjectDocuments() {
         removeButton.dataset.documentId;
 
       uploadedProjectDocuments =
-        uploadedProjectDocuments.filter(
-          function (documentItem) {
-            return (
-              documentItem.id !==
-              documentId
-            );
-          }
-        );
+  uploadedProjectDocuments.filter(
+    function (documentItem) {
+      return (
+        documentItem.id !==
+        documentId
+      );
+    }
+  );
 
-      renderProjectDocuments();
+renderProjectDocuments();
+
+notifyProjectDocumentsChanged(
+  'removed',
+  [documentId]
+);
     }
   );
 
@@ -2825,6 +2881,78 @@ const PROJECT_DOCUMENT_RULES = [
     ]
   },
   {
+    {
+  id: 'commercial-proposal',
+
+  label:
+    'Коммерческое предложение',
+
+  keywords: [
+    [
+      'коммерческое предложение',
+      10
+    ],
+
+    [
+      'технико-коммерческое предложение',
+      10
+    ],
+
+    [
+      'ценовое предложение',
+      8
+    ],
+
+    [
+      'коммерческая часть',
+      6
+    ],
+
+    [
+      'стоимость предложения',
+      6
+    ],
+
+    [
+      'итого к оплате',
+      4
+    ]
+  ]
+},
+
+{
+  id: 'agreement',
+
+  label:
+    'Договор / дополнительное соглашение',
+
+  keywords: [
+    [
+      'дополнительное соглашение',
+      10
+    ],
+
+    [
+      'приложение к договору',
+      8
+    ],
+
+    [
+      'договорная ведомость',
+      8
+    ],
+
+    [
+      'предмет договора',
+      5
+    ],
+
+    [
+      'стоимость договора',
+      5
+    ]
+  ]
+},
     id: 'estimate',
     label: 'Сметная документация',
     keywords: [
@@ -3494,3 +3622,89 @@ function initializePdfDiagnostics() {
 }
 
 initializePdfDiagnostics();
+async function analyzeProjectDocumentPdfForApi(
+  documentItem
+) {
+  if (
+    !documentItem ||
+    !documentItem.file
+  ) {
+    return {
+      success: false,
+
+      errorMessage:
+        'Файл для PDF-анализа не передан.'
+    };
+  }
+
+  documentItem.status =
+    'analyzing';
+
+  documentItem.analysis =
+    null;
+
+  renderProjectDocuments();
+
+  const result =
+    await inspectPdfDocument(
+      documentItem
+    );
+
+  documentItem.analysis =
+    result;
+
+  documentItem.status =
+    result.success
+      ? 'analyzed'
+      : 'error';
+
+  renderProjectDocuments();
+
+  return result;
+}
+
+window.BuildMindProjectDocuments = {
+  version:
+    'project-documents-runtime-v1',
+
+  getAll:
+    function () {
+      return uploadedProjectDocuments
+        .slice();
+    },
+
+  getById:
+    function (documentId) {
+      return (
+        uploadedProjectDocuments.find(
+          function (
+            documentItem
+          ) {
+            return (
+              documentItem.id ===
+              documentId
+            );
+          }
+        ) ||
+        null
+      );
+    },
+
+  getExtension:
+    getProjectDocumentExtension,
+
+  chooseFiles:
+    function () {
+      document
+        .getElementById(
+          'projectDocumentsInput'
+        )
+        ?.click();
+    },
+
+  analyzePdfDocument:
+    analyzeProjectDocumentPdfForApi,
+
+  render:
+    renderProjectDocuments
+};
