@@ -999,7 +999,7 @@ function syncRegistryFormFromExisting() {
       : [];
 
 
-  document.querySelectorAll(
+    document.querySelectorAll(
     '[data-document-registry-project-node]'
   ).forEach(
     function (input) {
@@ -1008,6 +1008,13 @@ function syncRegistryFormFromExisting() {
           input.value
         );
     }
+  );
+
+
+  setDocumentRegistryMessage(
+    'Новая редакция будет добавлена в документ «' +
+    documentItem.logicalTitle +
+    '». Document ID останется прежним.'
   );
 }
 
@@ -1022,6 +1029,11 @@ function syncRegistryFormMode() {
   const existingWrap =
     document.getElementById(
       'documentRegistryExistingWrap'
+    );
+
+  const existingSelect =
+    document.getElementById(
+      'documentRegistryExistingDocument'
     );
 
   const titleInput =
@@ -1074,12 +1086,131 @@ function syncRegistryFormMode() {
     mode ===
     'revision'
   ) {
+    refreshRegistryExistingDocuments();
+
+
+    /*
+      Если в реестре пока только
+      один логический документ,
+      человеку незачем выбирать его
+      второй раз вручную.
+    */
+
+    if (
+      existingSelect &&
+      !existingSelect.value &&
+      documentRegistryState
+        .documents
+        .length ===
+        1
+    ) {
+      existingSelect.value =
+        documentRegistryState
+          .documents[0]
+          .documentId;
+    }
+
+
     syncRegistryFormFromExisting();
+
+
+    const selectedDocument =
+      getRegistryDocumentById(
+        existingSelect?.value ||
+        ''
+      );
+
+
+    if (selectedDocument) {
+      setDocumentRegistryMessage(
+        'Режим новой редакции: файл будет добавлен ' +
+        'в документ «' +
+        selectedDocument.logicalTitle +
+        '». Новый Document ID создан не будет.'
+      );
+    } else {
+      setDocumentRegistryMessage(
+        'Режим новой редакции: выберите существующий документ. ' +
+        'Новый Document ID создан не будет.'
+      );
+    }
   } else {
     syncRegistryFormFromUpload();
+
+
+    setDocumentRegistryMessage(
+      'Режим нового документа: будет создан новый ' +
+      'логический документ с новым Document ID.'
+    );
   }
 }
 
+
+function isLikelyFollowupRevisionLabel(
+  value
+) {
+  const normalized =
+    String(
+      value ||
+      ''
+    )
+      .trim()
+      .toLowerCase()
+      .replace(
+        /\s+/g,
+        ''
+      );
+
+
+  if (!normalized) {
+    return false;
+  }
+
+
+  const revMatch =
+    normalized.match(
+      /^rev\.?([a-z]|\d+)$/
+    );
+
+
+  if (revMatch) {
+    const marker =
+      revMatch[1];
+
+
+    if (
+      /^[a-z]$/.test(
+        marker
+      )
+    ) {
+      return marker !==
+        'a';
+    }
+
+
+    return Number(
+      marker
+    ) > 1;
+  }
+
+
+  const rMatch =
+    normalized.match(
+      /^r(\d+)$/
+    );
+
+
+  if (rMatch) {
+    return Number(
+      rMatch[1]
+    ) > 1;
+  }
+
+
+  return /^изм\.?\d+$/.test(
+    normalized
+  );
+}
 
 function defaultRevisionLabel(
   documentItem
@@ -1170,6 +1301,39 @@ async function registerDocumentRevision() {
       ''
     ).trim();
 
+     if (
+    mode ===
+      'new' &&
+    documentRegistryState
+      .documents
+      .length > 0 &&
+    isLikelyFollowupRevisionLabel(
+      revisionLabelInput
+    )
+  ) {
+    const confirmedNewDocument =
+      confirm(
+        'Сейчас выбран режим «Новый логический документ».\n\n' +
+        'Будет создан НОВЫЙ Document ID, хотя метка редакции выглядит ' +
+        'как продолжение существующего документа: «' +
+        revisionLabelInput +
+        '».\n\n' +
+        'Если это Rev.B / R2 / Изм.1 существующего документа, ' +
+        'нажмите «Отмена» и выберите режим «Новая редакция существующего».'
+      );
+
+
+    if (!confirmedNewDocument) {
+      setDocumentRegistryMessage(
+        'Регистрация отменена. Выберите режим ' +
+        '«Новая редакция существующего» и укажите документ, ' +
+        'который эта редакция продолжает.'
+      );
+
+
+      return;
+    }
+  }
 
   let registryDocument =
     null;
