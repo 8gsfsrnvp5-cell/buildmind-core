@@ -1,0 +1,2293 @@
+'use strict';
+
+/* ==================================================
+   BUILDMIND PROJECT INTAKE — V1
+
+   Первый автоматизированный слой BuildMind:
+   - запускает существующие PDF / Excel движки;
+   - определяет назначение документов;
+   - считает найденные работы и материалы;
+   - выделяет сметы / коммерческие / договорные документы;
+   - ищет в PDF явные признаки согласований и разрешений;
+   - показывает спорные места для инженерной проверки.
+
+   V1 ничего не утверждает автоматически.
+   ================================================== */
+
+const BUILDMIND_PROJECT_INTAKE_VERSION =
+  'project-intake-v1';
+
+const PROJECT_INTAKE_AUTO_DELAY =
+  350;
+
+const PROJECT_INTAKE_KIND_LABELS = {
+  'project-documentation':
+    'Проектная / рабочая документация',
+
+  'work-volume':
+    'Ведомость объёмов работ',
+
+  schedule:
+    'График производства работ',
+
+  specification:
+    'Спецификация',
+
+  estimate:
+    'Сметная документация',
+
+  'commercial-proposal':
+    'Коммерческое предложение',
+
+  agreement:
+    'Договор / дополнительное соглашение',
+
+  journal:
+    'Журнал / ведомость',
+
+  other:
+    'Тип документа требует проверки'
+};
+
+const PROJECT_INTAKE_CONFIDENCE_LABELS = {
+  high:
+    'Высокая',
+
+  medium:
+    'Средняя',
+
+  low:
+    'Низкая'
+};
+
+const PROJECT_INTAKE_APPROVAL_TYPE_LABELS = {
+  approval:
+    'Согласование',
+
+  permit:
+    'Разрешение / допуск',
+
+  'technical-conditions':
+    'Технические условия',
+
+  supervision:
+    'Технический надзор / представитель',
+
+  notification:
+    'Уведомление внешней стороны'
+};
+
+let projectIntakeLastResult =
+  null;
+
+let projectIntakeAnalysisInProgress =
+  false;
+
+let projectIntakeAutoTimer =
+  null;
+
+function intakeT(
+  key
+) {
+  if (
+    window.BuildMindI18n &&
+    typeof window
+      .BuildMindI18n
+      .t === 'function'
+  ) {
+    return window
+      .BuildMindI18n
+      .t(key);
+  }
+
+  const fallback = {
+    'intake.title':
+      'Загрузка и анализ проекта',
+
+    'intake.subtitle':
+      'Загрузите комплект документов. BuildMind сам определит их назначение и покажет то, что требует проверки.',
+
+    'intake.selectFiles':
+      'Загрузить комплект проекта',
+
+    'intake.analyze':
+      'Анализировать комплект',
+
+    'intake.analyzing':
+      'BuildMind анализирует документы…',
+
+    'intake.empty':
+      'Сначала загрузите документы проекта.',
+
+    'intake.ready':
+      'Комплект готов к анализу.',
+
+    'intake.complete':
+      'Анализ комплекта завершён.',
+
+    'intake.review':
+      'Требует вашего внимания'
+  };
+
+  return fallback[key] ||
+    key;
+}
+
+function escapeProjectIntakeHtml(
+  value
+) {
+  const symbols = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+
+  return String(
+    value ?? ''
+  ).replace(
+    /[&<>"']/g,
+    function (symbol) {
+      return symbols[
+        symbol
+      ];
+    }
+  );
+}
+
+function normalizeProjectIntakeText(
+  value
+) {
+  return String(
+    value || ''
+  )
+    .toLowerCase()
+    .replace(
+      /ё/g,
+      'е'
+    )
+    .replace(
+      /[–—]/g,
+      '-'
+    )
+    .replace(
+      /\s+/g,
+      ' '
+    )
+    .trim();
+}
+
+function getProjectIntakeDocuments() {
+  if (
+    window.BuildMindProjectDocuments &&
+    typeof window
+      .BuildMindProjectDocuments
+      .getAll === 'function'
+  ) {
+    return window
+      .BuildMindProjectDocuments
+      .getAll();
+  }
+
+  if (
+    typeof uploadedProjectDocuments !==
+      'undefined' &&
+    Array.isArray(
+      uploadedProjectDocuments
+    )
+  ) {
+    return uploadedProjectDocuments;
+  }
+
+  return [];
+}
+
+function getProjectIntakeExtension(
+  documentItem
+) {
+  if (
+    window.BuildMindProjectDocuments &&
+    typeof window
+      .BuildMindProjectDocuments
+      .getExtension === 'function'
+  ) {
+    return window
+      .BuildMindProjectDocuments
+      .getExtension(
+        documentItem.file
+      );
+  }
+
+  const parts =
+    String(
+      documentItem
+        ?.file
+        ?.name ||
+      ''
+    ).split('.');
+
+  return parts.length > 1
+    ? parts
+        .pop()
+        .toLowerCase()
+    : '';
+}
+
+function getProjectIntakePdfText(
+  documentItem
+) {
+  const analysis =
+    documentItem
+      ?.analysis;
+
+  if (
+    !analysis
+      ?.success ||
+    !Array.isArray(
+      analysis
+        .extractedPages
+    )
+  ) {
+    return '';
+  }
+
+  return analysis
+    .extractedPages
+    .map(
+      function (page) {
+        return page.text ||
+          '';
+      }
+    )
+    .join(' ');
+}
+
+function classifyProjectIntakeByNameAndText(
+  fileName,
+  text
+) {
+  const source =
+    normalizeProjectIntakeText(
+      `${fileName || ''} ${text || ''}`
+    );
+
+  const rules = [
+    {
+      kind:
+        'commercial-proposal',
+
+      patterns: [
+        /коммерческ\w* предложени/,
+        /технико-коммерческ\w* предложени/,
+        /ценов\w* предложени/,
+        /стоимость предложени/,
+        /коммерческ\w* часть/,
+        /(^|[^а-яa-z0-9])ткп([^а-яa-z0-9]|$)/,
+        /(^|[^а-яa-z0-9])кп([^а-яa-z0-9]|$)/
+      ]
+    },
+
+    {
+      kind:
+        'agreement',
+
+      patterns: [
+        /дополнительн\w* соглашени/,
+        /доп\.?\s*соглашени/,
+        /(^|[^а-яa-z0-9])дс\s*№?/,
+        /приложени\w* к договор/,
+        /договорн\w* ведомост/
+      ]
+    },
+
+    {
+      kind:
+        'estimate',
+
+      patterns: [
+        /локальн\w* смет/,
+        /сметн\w* документац/,
+        /сметн\w* расчет/,
+        /сметн\w* расчёт/,
+        /сметн\w* стоимость/,
+        /(^|[^а-яa-z0-9])смета([^а-яa-z0-9]|$)/
+      ]
+    },
+
+    {
+      kind:
+        'work-volume',
+
+      patterns: [
+        /ведомост\w* объем\w* работ/,
+        /ведомост\w* объём\w* работ/,
+        /(^|[^а-яa-z0-9])вор([^а-яa-z0-9]|$)/
+      ]
+    },
+
+    {
+      kind:
+        'schedule',
+
+      patterns: [
+        /график\w* производств\w* работ/,
+        /календарн\w* график/,
+        /(^|[^а-яa-z0-9])гпр([^а-яa-z0-9]|$)/
+      ]
+    },
+
+    {
+      kind:
+        'specification',
+
+      patterns: [
+        /спецификац\w* материал/,
+        /спецификац\w* оборудован/,
+        /(^|[^а-яa-z0-9])спецификац/
+      ]
+    },
+
+    {
+      kind:
+        'project-documentation',
+
+      patterns: [
+        /рабоч\w* документац/,
+        /проектн\w* документац/,
+        /пояснительн\w* записк/,
+        /общие указания/,
+        /рабоч\w* проект/
+      ]
+    }
+  ];
+
+  let best =
+    null;
+
+  rules.forEach(
+    function (rule) {
+      let score =
+        0;
+
+      rule.patterns.forEach(
+        function (
+          pattern
+        ) {
+          if (
+            pattern.test(
+              source
+            )
+          ) {
+            score +=
+              4;
+          }
+        }
+      );
+
+      if (
+        !best ||
+        score >
+          best.score
+      ) {
+        best = {
+          kind:
+            rule.kind,
+
+          score
+        };
+      }
+    }
+  );
+
+  if (
+    !best ||
+    best.score === 0
+  ) {
+    return null;
+  }
+
+  return {
+    kind:
+      best.kind,
+
+    confidence:
+      best.score >= 8
+        ? 'high'
+        : 'medium',
+
+    source:
+      'Название / содержимое документа'
+  };
+}
+
+function mapExistingPdfClassification(
+  classification
+) {
+  if (!classification) {
+    return null;
+  }
+
+  const mapping = {
+    schedule:
+      'schedule',
+
+    specification:
+      'specification',
+
+    'work-volume':
+      'work-volume',
+
+    estimate:
+      'estimate',
+
+    'commercial-proposal':
+      'commercial-proposal',
+
+    agreement:
+      'agreement',
+
+    'working-documents':
+      'project-documentation',
+
+    'explanatory-note':
+      'project-documentation',
+
+    'cable-journal':
+      'journal'
+  };
+
+  const kind =
+    mapping[
+      classification.id
+    ];
+
+  if (!kind) {
+    return null;
+  }
+
+  const confidenceText =
+    String(
+      classification
+        .confidence ||
+      ''
+    ).toLowerCase();
+
+  let confidence =
+    'low';
+
+  if (
+    confidenceText.includes(
+      'высок'
+    )
+  ) {
+    confidence =
+      'high';
+  } else if (
+    confidenceText.includes(
+      'сред'
+    )
+  ) {
+    confidence =
+      'medium';
+  }
+
+  return {
+    kind,
+
+    confidence,
+
+    source:
+      'PDF-анализ BuildMind'
+  };
+}
+
+function classifyProjectIntakePdf(
+  documentItem
+) {
+  const heuristic =
+    classifyProjectIntakeByNameAndText(
+      documentItem
+        .file
+        .name,
+
+      getProjectIntakePdfText(
+        documentItem
+      )
+    );
+
+  const existing =
+    mapExistingPdfClassification(
+      documentItem
+        .analysis
+        ?.documentClassification
+    );
+
+  if (
+    heuristic &&
+    existing &&
+    heuristic.kind ===
+      existing.kind
+  ) {
+    return {
+      kind:
+        heuristic.kind,
+
+      confidence:
+        heuristic.confidence ===
+          'high' ||
+        existing.confidence ===
+          'high'
+          ? 'high'
+          : 'medium',
+
+      source:
+        'Название / содержимое + PDF-анализ BuildMind'
+    };
+  }
+
+  if (
+    heuristic &&
+    existing &&
+    heuristic.kind !==
+      existing.kind
+  ) {
+    return {
+      kind:
+        heuristic.confidence ===
+          'high'
+          ? heuristic.kind
+          : existing.kind,
+
+      confidence:
+        'medium',
+
+      source:
+        'Найдены разные признаки — требуется проверка',
+
+      conflict:
+        true
+    };
+  }
+
+  return (
+    heuristic ||
+    existing ||
+    {
+      kind:
+        'other',
+
+      confidence:
+        'low',
+
+      source:
+        'Недостаточно признаков'
+    }
+  );
+}
+
+function classifyProjectIntakeTable(
+  documentItem,
+  analysis
+) {
+  const nameResult =
+    classifyProjectIntakeByNameAndText(
+      documentItem
+        .file
+        .name,
+
+      ''
+    );
+
+  const sheets =
+    Array.isArray(
+      analysis?.sheets
+    )
+      ? analysis.sheets
+      : [];
+
+  const ids =
+    sheets
+      .map(
+        function (sheet) {
+          return (
+            sheet
+              ?.tableClassification
+              ?.id ||
+            ''
+          );
+        }
+      )
+      .filter(Boolean);
+
+  let structureResult =
+    null;
+
+  if (
+    ids.includes(
+      'schedule-table'
+    )
+  ) {
+    structureResult = {
+      kind:
+        'schedule',
+
+      confidence:
+        'high',
+
+      source:
+        'Структура таблицы'
+    };
+  } else if (
+    ids.includes(
+      'work-volume'
+    )
+  ) {
+    structureResult = {
+      kind:
+        'work-volume',
+
+      confidence:
+        'high',
+
+      source:
+        'Структура таблицы'
+    };
+  } else if (
+    ids.includes(
+      'material-table'
+    )
+  ) {
+    structureResult = {
+      kind:
+        'specification',
+
+      confidence:
+        'medium',
+
+      source:
+        'Структура таблицы'
+    };
+  } else if (
+    ids.includes(
+      'mixed-work-material-price-table'
+    )
+  ) {
+    structureResult = {
+      kind:
+        'commercial-proposal',
+
+      confidence:
+        'medium',
+
+      source:
+        'Таблица работ / материалов со стоимостью'
+    };
+  }
+
+  if (
+    nameResult &&
+    structureResult?.kind ===
+      'commercial-proposal' &&
+    [
+      'estimate',
+      'commercial-proposal'
+    ].includes(
+      nameResult.kind
+    )
+  ) {
+    return {
+      kind:
+        nameResult.kind,
+
+      confidence:
+        'high',
+
+      source:
+        'Название файла + таблица работ / материалов со стоимостью'
+    };
+  }
+
+  if (
+    nameResult &&
+    structureResult &&
+    nameResult.kind ===
+      structureResult.kind
+  ) {
+    return {
+      kind:
+        nameResult.kind,
+
+      confidence:
+        nameResult.confidence ===
+          'high' ||
+        structureResult.confidence ===
+          'high'
+          ? 'high'
+          : 'medium',
+
+      source:
+        'Название файла + структура таблицы'
+    };
+  }
+
+  if (
+    nameResult &&
+    structureResult &&
+    nameResult.kind !==
+      structureResult.kind
+  ) {
+    return {
+      kind:
+        nameResult.kind,
+
+      confidence:
+        'medium',
+
+      source:
+        'Название и структура таблицы дают разные признаки',
+
+      conflict:
+        true
+    };
+  }
+
+  return (
+    nameResult ||
+    structureResult ||
+    {
+      kind:
+        'other',
+
+      confidence:
+        'low',
+
+      source:
+        'Недостаточно признаков'
+    }
+  );
+}
+
+function getProjectIntakeApprovalType(
+  context
+) {
+  const text =
+    normalizeProjectIntakeText(
+      context
+    );
+
+  if (
+    /техническ\w* услов|(^|[^а-я])ту([^а-я]|$)/.test(
+      text
+    )
+  ) {
+    return 'technical-conditions';
+  }
+
+  if (
+    /технадзор|техническ\w* надзор|вызов\w* представител/.test(
+      text
+    )
+  ) {
+    return 'supervision';
+  }
+
+  if (
+    /разрешени|допуск|ордер/.test(
+      text
+    )
+  ) {
+    return 'permit';
+  }
+
+  if (
+    /уведомить|уведомлени/.test(
+      text
+    )
+  ) {
+    return 'notification';
+  }
+
+  return 'approval';
+}
+
+function detectProjectIntakeOrganization(
+  context
+) {
+  const text =
+    normalizeProjectIntakeText(
+      context
+    );
+
+  const organizations = [
+    [
+      /(^|[^а-яa-z])ржд([^а-яa-z]|$)/,
+      'РЖД'
+    ],
+
+    [
+      /гормост/,
+      'Гормост'
+    ],
+
+    [
+      /гормос/,
+      'Гормост / организация требует уточнения'
+    ],
+
+    [
+      /моссвет/,
+      'Моссвет'
+    ],
+
+    [
+      /мосводоканал/,
+      'Мосводоканал'
+    ],
+
+    [
+      /заказчик/,
+      'Заказчик'
+    ],
+
+    [
+      /проектн\w* организац|проектн\w* отдел|проектировщик/,
+      'Проектная организация'
+    ],
+
+    [
+      /балансодержател/,
+      'Балансодержатель'
+    ],
+
+    [
+      /эксплуатирующ\w* организац/,
+      'Эксплуатирующая организация'
+    ],
+
+    [
+      /владел\w* сет|владел\w* коммуникац/,
+      'Владелец инженерных сетей'
+    ]
+  ];
+
+  const found =
+    organizations.find(
+      function (item) {
+        return item[0]
+          .test(
+            text
+          );
+      }
+    );
+
+  return found
+    ? found[1]
+    : 'Организация требует уточнения';
+}
+
+function extractProjectIntakeApprovals(
+  documentItem
+) {
+  const analysis =
+    documentItem
+      ?.analysis;
+
+  if (
+    !analysis
+      ?.success ||
+    !Array.isArray(
+      analysis
+        .extractedPages
+    )
+  ) {
+    return [];
+  }
+
+  const actionPattern =
+    /(согласован\w*|согласовать|согласование|разрешени\w*|техническ\w*\s+услов\w*|технадзор|техническ\w*\s+надзор|допуск\w*|ордер\w*|вызов\w*\s+представител\w*|уведомить|уведомлени\w*)/giu;
+
+  const candidates =
+    [];
+
+  analysis
+    .extractedPages
+    .forEach(
+      function (page) {
+        const text =
+          String(
+            page.text ||
+            ''
+          );
+
+        actionPattern.lastIndex =
+          0;
+
+        let match =
+          null;
+
+        while (
+          (
+            match =
+              actionPattern.exec(
+                text
+              )
+          ) !== null &&
+          candidates.length < 40
+        ) {
+          const start =
+            Math.max(
+              0,
+              match.index -
+                170
+            );
+
+          const end =
+            Math.min(
+              text.length,
+              match.index +
+                match[0].length +
+                220
+            );
+
+          const context =
+            text
+              .slice(
+                start,
+                end
+              )
+              .replace(
+                /\s+/g,
+                ' '
+              )
+              .trim();
+
+          if (
+            context.length <
+            20
+          ) {
+            continue;
+          }
+
+          const type =
+            getProjectIntakeApprovalType(
+              context
+            );
+
+          const organization =
+            detectProjectIntakeOrganization(
+              context
+            );
+
+          const key =
+            [
+              page.pageNumber,
+              type,
+              normalizeProjectIntakeText(
+                context
+              ).slice(
+                0,
+                120
+              )
+            ].join('|');
+
+          const duplicate =
+            candidates.some(
+              function (
+                candidate
+              ) {
+                return (
+                  candidate.key ===
+                  key
+                );
+              }
+            );
+
+          if (duplicate) {
+            continue;
+          }
+
+          candidates.push({
+            key,
+
+            type,
+
+            typeLabel:
+              PROJECT_INTAKE_APPROVAL_TYPE_LABELS[
+                type
+              ],
+
+            organization,
+
+            confidence:
+              organization ===
+                'Организация требует уточнения'
+                ? 'medium'
+                : 'high',
+
+            fileName:
+              documentItem
+                .file
+                .name,
+
+            pageNumber:
+              page.pageNumber,
+
+            context,
+
+            sourceType:
+              'document',
+
+            requiresEngineerConfirmation:
+              true
+          });
+        }
+      }
+    );
+
+  return candidates;
+}
+
+async function analyzeProjectIntakePdf(
+  documentItem
+) {
+  const api =
+    window.BuildMindProjectDocuments;
+
+  if (
+    !documentItem
+      .analysis
+      ?.success
+  ) {
+    if (
+      api &&
+      typeof api
+        .analyzePdfDocument ===
+        'function'
+    ) {
+      await api
+        .analyzePdfDocument(
+          documentItem
+        );
+    } else if (
+      typeof inspectPdfDocument ===
+        'function'
+    ) {
+      documentItem.status =
+        'analyzing';
+
+      documentItem.analysis =
+        await inspectPdfDocument(
+          documentItem
+        );
+
+      documentItem.status =
+        documentItem
+          .analysis
+          .success
+          ? 'analyzed'
+          : 'error';
+    }
+  }
+
+  return {
+    classification:
+      classifyProjectIntakePdf(
+        documentItem
+      ),
+
+    works: [],
+
+    materials:
+      Array.isArray(
+        documentItem
+          .analysis
+          ?.materialCandidates
+      )
+        ? documentItem
+            .analysis
+            .materialCandidates
+        : [],
+
+    uncertain: [],
+
+    approvals:
+      extractProjectIntakeApprovals(
+        documentItem
+      )
+  };
+}
+
+async function analyzeProjectIntakeTable(
+  documentItem
+) {
+  const engine =
+    window.BuildMindWorkVolume;
+
+  let analysis =
+    documentItem
+      .workVolumeAnalysis ||
+    null;
+
+  if (
+    !analysis &&
+    engine &&
+    typeof engine
+      .analyzeDocument ===
+      'function'
+  ) {
+    documentItem.status =
+      'analyzing';
+
+    analysis =
+      await engine
+        .analyzeDocument(
+          documentItem
+        );
+
+    documentItem.workVolumeAnalysis =
+      analysis;
+
+    documentItem.status =
+      analysis
+        ? 'analyzed'
+        : 'error';
+  }
+
+  const candidates =
+    Array.isArray(
+      analysis
+        ?.candidates
+    )
+      ? analysis.candidates
+      : [];
+
+  return {
+    classification:
+      classifyProjectIntakeTable(
+        documentItem,
+        analysis
+      ),
+
+    works:
+      candidates.filter(
+        function (item) {
+          return (
+            item.rowType ===
+            'work'
+          );
+        }
+      ),
+
+    materials:
+      candidates.filter(
+        function (item) {
+          return (
+            item.rowType ===
+            'material'
+          );
+        }
+      ),
+
+    uncertain:
+      candidates.filter(
+        function (item) {
+          return (
+            item.rowType ===
+            'uncertain'
+          );
+        }
+      ),
+
+    approvals: []
+  };
+}
+
+function createProjectIntakeUi() {
+  if (
+    document.getElementById(
+      'projectIntakeSection'
+    )
+  ) {
+    return;
+  }
+
+  const projectDocuments =
+    document.getElementById(
+      'projectDocumentsSection'
+    );
+
+  if (!projectDocuments) {
+    return;
+  }
+
+  const section =
+    document.createElement(
+      'section'
+    );
+
+  section.id =
+    'projectIntakeSection';
+
+  section.className =
+    'card project-intake-card';
+
+  section.innerHTML = `
+    <div class="project-intake-header">
+      <div>
+        <span class="project-intake-eyebrow">
+          АВТОМАТИЧЕСКИЙ АНАЛИЗ · V1
+        </span>
+
+        <h2>
+          ${escapeProjectIntakeHtml(
+            intakeT(
+              'intake.title'
+            )
+          )}
+        </h2>
+
+        <p class="muted">
+          ${escapeProjectIntakeHtml(
+            intakeT(
+              'intake.subtitle'
+            )
+          )}
+        </p>
+      </div>
+
+      <div class="project-intake-actions">
+        <button
+          type="button"
+          id="projectIntakeSelectBtn"
+          class="primary"
+        >
+          ${escapeProjectIntakeHtml(
+            intakeT(
+              'intake.selectFiles'
+            )
+          )}
+        </button>
+
+        <button
+          type="button"
+          id="projectIntakeAnalyzeBtn"
+          class="secondary-btn"
+          disabled
+        >
+          ${escapeProjectIntakeHtml(
+            intakeT(
+              'intake.analyze'
+            )
+          )}
+        </button>
+      </div>
+    </div>
+
+    <p
+      id="projectIntakeStatus"
+      class="project-intake-status"
+    >
+      ${escapeProjectIntakeHtml(
+        intakeT(
+          'intake.empty'
+        )
+      )}
+    </p>
+
+    <div class="project-intake-summary">
+      <div>
+        <strong id="projectIntakeDocumentsCount">0</strong>
+        <span>Документы</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeWorksCount">0</strong>
+        <span>Работы</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeMaterialsCount">0</strong>
+        <span>Материалы</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeCommercialCount">0</strong>
+        <span>Сметы / договорные</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeApprovalsCount">0</strong>
+        <span>Согласования</span>
+      </div>
+
+      <div class="project-intake-summary-review">
+        <strong id="projectIntakeReviewCount">0</strong>
+        <span>Требует проверки</span>
+      </div>
+    </div>
+
+    <div class="project-intake-grid">
+      <section>
+        <h3>
+          Что BuildMind распознал
+        </h3>
+
+        <div
+          id="projectIntakeDocumentsList"
+          class="project-intake-list"
+        >
+          <div class="project-intake-empty">
+            Результаты появятся после загрузки документов.
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3>
+          ${escapeProjectIntakeHtml(
+            intakeT(
+              'intake.review'
+            )
+          )}
+        </h3>
+
+        <div
+          id="projectIntakeReviewList"
+          class="project-intake-list"
+        >
+          <div class="project-intake-empty">
+            Пока нет вопросов для проверки.
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="project-intake-note">
+      BuildMind показывает инженерные гипотезы, источник и уверенность.
+      Действующие документы, объёмы и согласования утверждает ответственный специалист.
+    </div>
+  `;
+
+  projectDocuments
+    .parentNode
+    .insertBefore(
+      section,
+      projectDocuments
+    );
+}
+
+function setProjectIntakeText(
+  id,
+  value
+) {
+  const element =
+    document.getElementById(
+      id
+    );
+
+  if (element) {
+    element.textContent =
+      String(
+        value ?? ''
+      );
+  }
+}
+
+function renderProjectIntakeDocumentList(
+  result
+) {
+  const container =
+    document.getElementById(
+      'projectIntakeDocumentsList'
+    );
+
+  if (!container) {
+    return;
+  }
+
+  const documents =
+    Array.isArray(
+      result
+        ?.documents
+    )
+      ? result.documents
+      : [];
+
+  if (
+    documents.length === 0
+  ) {
+    container.innerHTML =
+      '<div class="project-intake-empty">' +
+      'Документы ещё не анализировались.' +
+      '</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    documents
+      .map(
+        function (item) {
+          const label =
+            PROJECT_INTAKE_KIND_LABELS[
+              item.kind
+            ] ||
+            PROJECT_INTAKE_KIND_LABELS
+              .other;
+
+          const confidence =
+            PROJECT_INTAKE_CONFIDENCE_LABELS[
+              item.confidence
+            ] ||
+            'Не определена';
+
+          return `
+            <article class="project-intake-item">
+              <div>
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )}
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    label
+                  )}
+                </p>
+
+                <small>
+                  Основание:
+                  ${escapeProjectIntakeHtml(
+                    item
+                      .classificationSource
+                  )}
+                </small>
+              </div>
+
+              <span
+                class="project-intake-confidence
+                project-intake-confidence-${escapeProjectIntakeHtml(
+                  item.confidence
+                )}"
+              >
+                ${escapeProjectIntakeHtml(
+                  confidence
+                )}
+              </span>
+            </article>
+          `;
+        }
+      )
+      .join('');
+}
+
+function renderProjectIntakeReviewList(
+  result
+) {
+  const container =
+    document.getElementById(
+      'projectIntakeReviewList'
+    );
+
+  if (!container) {
+    return;
+  }
+
+  const items =
+    Array.isArray(
+      result
+        ?.reviewItems
+    )
+      ? result.reviewItems
+      : [];
+
+  if (
+    items.length === 0
+  ) {
+    container.innerHTML =
+      '<div class="project-intake-empty project-intake-empty-ok">' +
+      'По текущим правилам анализа явных вопросов не найдено.' +
+      '</div>';
+
+    return;
+  }
+
+  container.innerHTML =
+    items
+      .slice(
+        0,
+        40
+      )
+      .map(
+        function (item) {
+          if (
+            item.reviewType ===
+            'approval'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Согласование / разрешение
+                </span>
+
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.typeLabel
+                  )}
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.organization
+                  )}
+                </p>
+
+                <small>
+                  Источник:
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )},
+                  страница
+                  ${escapeProjectIntakeHtml(
+                    item.pageNumber
+                  )}
+                </small>
+
+                <blockquote>
+                  ${escapeProjectIntakeHtml(
+                    item.context
+                  )}
+                </blockquote>
+
+                <p class="project-intake-review-hint">
+                  По тексту документа выявлен признак внешней зависимости.
+                  Рекомендуется проверить наличие и статус соответствующего согласования.
+                </p>
+              </article>
+            `;
+          }
+
+          if (
+            item.reviewType ===
+            'uncertain-row'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Строка таблицы
+                </span>
+
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.name ||
+                    'Тип строки не определён'
+                  )}
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )}
+                </p>
+
+                <small>
+                  BuildMind не использует эту строку автоматически,
+                  пока инженер не уточнит её назначение.
+                </small>
+              </article>
+            `;
+          }
+
+          return `
+            <article class="project-intake-review-item">
+              <span class="project-intake-review-badge">
+                Тип документа
+              </span>
+
+              <strong>
+                ${escapeProjectIntakeHtml(
+                  item.fileName
+                )}
+              </strong>
+
+              <p>
+                Предположительно:
+                ${escapeProjectIntakeHtml(
+                  PROJECT_INTAKE_KIND_LABELS[
+                    item.kind
+                  ] ||
+                  PROJECT_INTAKE_KIND_LABELS
+                    .other
+                )}
+              </p>
+
+              <small>
+                Уверенность недостаточна для автоматического подтверждения.
+              </small>
+            </article>
+          `;
+        }
+      )
+      .join('');
+}
+
+function renderProjectIntake(
+  result
+) {
+  createProjectIntakeUi();
+
+  const documents =
+    getProjectIntakeDocuments();
+
+  const analyzeButton =
+    document.getElementById(
+      'projectIntakeAnalyzeBtn'
+    );
+
+  if (analyzeButton) {
+    analyzeButton.disabled =
+      projectIntakeAnalysisInProgress ||
+      documents.length === 0;
+  }
+
+  if (!result) {
+    setProjectIntakeText(
+      'projectIntakeDocumentsCount',
+      documents.length
+    );
+
+    [
+      'Works',
+      'Materials',
+      'Commercial',
+      'Approvals',
+      'Review'
+    ].forEach(
+      function (suffix) {
+        setProjectIntakeText(
+          `projectIntake${suffix}Count`,
+          0
+        );
+      }
+    );
+
+    renderProjectIntakeDocumentList({
+      documents: []
+    });
+
+    renderProjectIntakeReviewList({
+      reviewItems: []
+    });
+
+    setProjectIntakeText(
+      'projectIntakeStatus',
+
+      documents.length > 0
+        ? (
+            `${intakeT(
+              'intake.ready'
+            )} ` +
+            'Анализ запустится автоматически.'
+          )
+        : intakeT(
+            'intake.empty'
+          )
+    );
+
+    return;
+  }
+
+  setProjectIntakeText(
+    'projectIntakeDocumentsCount',
+    result.documents.length
+  );
+
+  setProjectIntakeText(
+    'projectIntakeWorksCount',
+    result.worksCount
+  );
+
+  setProjectIntakeText(
+    'projectIntakeMaterialsCount',
+    result.materialsCount
+  );
+
+  setProjectIntakeText(
+    'projectIntakeCommercialCount',
+    result
+      .commercialDocumentsCount
+  );
+
+  setProjectIntakeText(
+    'projectIntakeApprovalsCount',
+    result.approvals.length
+  );
+
+  setProjectIntakeText(
+    'projectIntakeReviewCount',
+    result.reviewItems.length
+  );
+
+  renderProjectIntakeDocumentList(
+    result
+  );
+
+  renderProjectIntakeReviewList(
+    result
+  );
+}
+
+async function runBuildMindProjectIntake() {
+  if (
+    projectIntakeAnalysisInProgress
+  ) {
+    return projectIntakeLastResult;
+  }
+
+  createProjectIntakeUi();
+
+  const documents =
+    getProjectIntakeDocuments();
+
+  if (
+    documents.length === 0
+  ) {
+    setProjectIntakeText(
+      'projectIntakeStatus',
+      intakeT(
+        'intake.empty'
+      )
+    );
+
+    renderProjectIntake(
+      null
+    );
+
+    return {
+      success: false,
+
+      errorCode:
+        'PROJECT_INTAKE_DOCUMENTS_NOT_FOUND'
+    };
+  }
+
+  const analyzeButton =
+    document.getElementById(
+      'projectIntakeAnalyzeBtn'
+    );
+
+  projectIntakeAnalysisInProgress =
+    true;
+
+  if (analyzeButton) {
+    analyzeButton.disabled =
+      true;
+
+    analyzeButton.textContent =
+      'Анализ…';
+  }
+
+  setProjectIntakeText(
+    'projectIntakeStatus',
+    intakeT(
+      'intake.analyzing'
+    )
+  );
+
+  const result = {
+    success:
+      true,
+
+    version:
+      BUILDMIND_PROJECT_INTAKE_VERSION,
+
+    createdAt:
+      new Date()
+        .toISOString(),
+
+    documents:
+      [],
+
+    worksCount:
+      0,
+
+    materialsCount:
+      0,
+
+    commercialDocumentsCount:
+      0,
+
+    approvals:
+      [],
+
+    uncertainRows:
+      [],
+
+    reviewItems:
+      []
+  };
+
+  try {
+    for (
+      let index = 0;
+      index <
+        documents.length;
+      index += 1
+    ) {
+      const documentItem =
+        documents[
+          index
+        ];
+
+      const extension =
+        getProjectIntakeExtension(
+          documentItem
+        );
+
+      setProjectIntakeText(
+        'projectIntakeStatus',
+
+        `Анализируется ` +
+        `${index + 1} из ` +
+        `${documents.length}: ` +
+        documentItem
+          .file
+          .name
+      );
+
+      let analyzed;
+
+      if (
+        extension ===
+        'pdf'
+      ) {
+        analyzed =
+          await analyzeProjectIntakePdf(
+            documentItem
+          );
+      } else if (
+        [
+          'xlsx',
+          'xls',
+          'csv'
+        ].includes(
+          extension
+        )
+      ) {
+        analyzed =
+          await analyzeProjectIntakeTable(
+            documentItem
+          );
+      } else {
+        analyzed = {
+          classification: {
+            kind:
+              'other',
+
+            confidence:
+              'low',
+
+            source:
+              'Формат пока не поддерживается'
+          },
+
+          works:
+            [],
+
+          materials:
+            [],
+
+          uncertain:
+            [],
+
+          approvals:
+            []
+        };
+      }
+
+      const classification =
+        analyzed
+          .classification;
+
+      const documentResult = {
+        documentId:
+          documentItem.id,
+
+        fileName:
+          documentItem
+            .file
+            .name,
+
+        extension,
+
+        kind:
+          classification.kind,
+
+        confidence:
+          classification
+            .confidence,
+
+        classificationSource:
+          classification
+            .source,
+
+        requiresReview:
+          classification
+            .confidence !==
+              'high' ||
+          classification.kind ===
+            'other' ||
+          classification
+            .conflict ===
+            true
+      };
+
+      result
+        .documents
+        .push(
+          documentResult
+        );
+
+      result.worksCount +=
+        analyzed
+          .works
+          .length;
+
+      result.materialsCount +=
+        analyzed
+          .materials
+          .length;
+
+      result
+        .approvals
+        .push(
+          ...analyzed
+            .approvals
+        );
+
+      result
+        .uncertainRows
+        .push(
+          ...analyzed
+            .uncertain
+            .map(
+              function (
+                candidate
+              ) {
+                return {
+                  ...candidate,
+
+                  fileName:
+                    documentItem
+                      .file
+                      .name
+                };
+              }
+            )
+        );
+
+      if (
+        [
+          'estimate',
+          'commercial-proposal',
+          'agreement'
+        ].includes(
+          classification
+            .kind
+        )
+      ) {
+        result
+          .commercialDocumentsCount +=
+          1;
+      }
+
+      if (
+        documentResult
+          .requiresReview
+      ) {
+        result
+          .reviewItems
+          .push({
+            reviewType:
+              'document-kind',
+
+            fileName:
+              documentResult
+                .fileName,
+
+            kind:
+              documentResult
+                .kind,
+
+            confidence:
+              documentResult
+                .confidence
+          });
+      }
+    }
+
+    result
+      .approvals
+      .forEach(
+        function (
+          candidate
+        ) {
+          result
+            .reviewItems
+            .push({
+              ...candidate,
+
+              reviewType:
+                'approval'
+            });
+        }
+      );
+
+    result
+      .uncertainRows
+      .slice(
+        0,
+        30
+      )
+      .forEach(
+        function (
+          candidate
+        ) {
+          result
+            .reviewItems
+            .push({
+              reviewType:
+                'uncertain-row',
+
+              fileName:
+                candidate
+                  .fileName,
+
+              name:
+                candidate
+                  .workName ||
+                ''
+            });
+        }
+      );
+
+    projectIntakeLastResult =
+      result;
+
+    renderProjectIntake(
+      result
+    );
+
+    setProjectIntakeText(
+      'projectIntakeStatus',
+
+      `${intakeT(
+        'intake.complete'
+      )} ` +
+      'Автоматически найденные выводы требуют инженерной проверки.'
+    );
+
+    if (
+      window.BuildMindProjectDocuments &&
+      typeof window
+        .BuildMindProjectDocuments
+        .render ===
+        'function'
+    ) {
+      window
+        .BuildMindProjectDocuments
+        .render();
+    }
+
+    window.dispatchEvent(
+      new CustomEvent(
+        'buildmind:project-intake-completed',
+        {
+          detail:
+            result
+        }
+      )
+    );
+
+    return result;
+  } catch (error) {
+    console.error(
+      'BuildMind Project Intake: ошибка анализа:',
+      error
+    );
+
+    setProjectIntakeText(
+      'projectIntakeStatus',
+
+      'Во время анализа произошла ошибка. Проверьте Console.'
+    );
+
+    return {
+      success:
+        false,
+
+      errorCode:
+        'PROJECT_INTAKE_ANALYSIS_ERROR',
+
+      error
+    };
+  } finally {
+    projectIntakeAnalysisInProgress =
+      false;
+
+    if (analyzeButton) {
+      analyzeButton.disabled =
+        getProjectIntakeDocuments()
+          .length === 0;
+
+      analyzeButton.textContent =
+        intakeT(
+          'intake.analyze'
+        );
+    }
+  }
+}
+
+function queueProjectIntakeAutoAnalysis() {
+  if (
+    projectIntakeAutoTimer
+  ) {
+    clearTimeout(
+      projectIntakeAutoTimer
+    );
+  }
+
+  const documents =
+    getProjectIntakeDocuments();
+
+  renderProjectIntake(
+    null
+  );
+
+  if (
+    documents.length === 0
+  ) {
+    projectIntakeLastResult =
+      null;
+
+    return;
+  }
+
+  projectIntakeAutoTimer =
+    setTimeout(
+      runBuildMindProjectIntake,
+      PROJECT_INTAKE_AUTO_DELAY
+    );
+}
+
+function bindProjectIntakeControls() {
+  const selectButton =
+    document.getElementById(
+      'projectIntakeSelectBtn'
+    );
+
+  const analyzeButton =
+    document.getElementById(
+      'projectIntakeAnalyzeBtn'
+    );
+
+  if (selectButton) {
+    selectButton.addEventListener(
+      'click',
+
+      function () {
+        if (
+          window.BuildMindProjectDocuments &&
+          typeof window
+            .BuildMindProjectDocuments
+            .chooseFiles ===
+            'function'
+        ) {
+          window
+            .BuildMindProjectDocuments
+            .chooseFiles();
+        } else {
+          document
+            .getElementById(
+              'projectDocumentsInput'
+            )
+            ?.click();
+        }
+      }
+    );
+  }
+
+  if (analyzeButton) {
+    analyzeButton.addEventListener(
+      'click',
+      runBuildMindProjectIntake
+    );
+  }
+}
+
+function initializeBuildMindProjectIntake() {
+  createProjectIntakeUi();
+
+  bindProjectIntakeControls();
+
+  window.addEventListener(
+    'buildmind:project-documents-changed',
+    queueProjectIntakeAutoAnalysis
+  );
+
+  window.addEventListener(
+    'buildmind:locale-changed',
+
+    function () {
+      const oldSection =
+        document.getElementById(
+          'projectIntakeSection'
+        );
+
+      if (oldSection) {
+        oldSection.remove();
+      }
+
+      createProjectIntakeUi();
+
+      bindProjectIntakeControls();
+
+      renderProjectIntake(
+        projectIntakeLastResult
+      );
+    }
+  );
+
+  renderProjectIntake(
+    null
+  );
+}
+
+window.BuildMindProjectIntake = {
+  version:
+    BUILDMIND_PROJECT_INTAKE_VERSION,
+
+  run:
+    runBuildMindProjectIntake,
+
+  refresh:
+    function () {
+      renderProjectIntake(
+        projectIntakeLastResult
+      );
+    },
+
+  getLastResult:
+    function () {
+      return projectIntakeLastResult;
+    }
+};
+
+initializeBuildMindProjectIntake();
+
+console.info(
+  'BuildMind Project Intake загружен:',
+  BUILDMIND_PROJECT_INTAKE_VERSION
+);
