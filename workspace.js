@@ -543,6 +543,11 @@ function buildWorkspaceViews() {
       'projectCoreSection'
     );
 
+const projectIntake =
+  getWorkspaceElement(
+    'projectIntakeSection'
+  );
+   
   const projectDocuments =
     getWorkspaceElement(
       'projectDocumentsSection'
@@ -654,6 +659,11 @@ function buildWorkspaceViews() {
     )
   );
 
+moveWorkspaceNode(
+  projectIntake,
+  views.documents
+);
+   
   moveWorkspaceNode(
     projectDocuments,
     views.documents
@@ -690,7 +700,7 @@ function buildWorkspaceViews() {
       'График производства работ',
 
       'Здесь будет единое представление ГПР, ' +
-      'объёмов, сроков, Baseline / Current / Actual ' +
+      'объёмов, сроков, исходного плана, действующего плана и факта ' +
       'и отклонений.'
     )
   );
@@ -742,7 +752,7 @@ function buildWorkspaceViews() {
     createWorkspacePlaceholder(
       'Изменений пока нет',
 
-      'Следующий модуль ChangeSet V1 будет собирать ' +
+     'Следующий модуль изменений проекта будет собирать ' +
       'документы одного изменения и показывать ' +
       'добавленные, изменённые и исключённые позиции.'
     )
@@ -769,8 +779,8 @@ function buildWorkspaceViews() {
     createWorkspacePlaceholder(
       'Хронология будет формироваться автоматически',
 
-      'История будет сохранять Rev.A → Rev.B → Rev.C, ' +
-      'ChangeSets, утверждения и изменения ' +
+      'История будет сохранять редакцию 1 → редакцию 2 → редакцию 3, ' +
+      'пакеты изменений, утверждения и изменения ' +
       'без удаления прошлого.'
     )
   );
