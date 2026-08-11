@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BuildMind Procurement MVP</title>
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <header class="topbar">
@@ -142,7 +142,10 @@
   </div>
 </section>
     
-  <section class="card">
+ <section
+  id="projectDataSection"
+  class="card"
+>
   <h2>Данные проекта</h2>
 
   <p class="muted">
@@ -748,7 +751,10 @@
   </div>
 </section>
     
-    <section class="card">
+    <section
+  id="materialsTableSection"
+  class="card"
+>
       <h2>Материалы</h2>
       <div class="table-wrap">
         <table id="materialsTable">
@@ -780,7 +786,10 @@
       </div>
     </section>
 
-    <section class="card">
+    <section
+  id="materialManagementSection"
+  class="card"
+>
       <section class="context-layout">
   <div class="card current-context-card">
    <h2>Текущий контекст контроля</h2>
@@ -962,6 +971,8 @@
 <script src="workVolumeEngine.js?v=4"></script>
 <script src="workQuantityEngine.js?v=3"></script>
 <script src="planningEngine.js?v=4"></script>
+
+<script src="workspace.js?v=1"></script>
       
 </body>
 </html>
