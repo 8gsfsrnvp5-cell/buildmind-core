@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1
+   BUILDMIND PROJECT INTAKE — V1.1
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1';
+  'project-intake-v1.1';
 
 const PROJECT_INTAKE_AUTO_DELAY =
   350;
@@ -267,6 +267,20 @@ function classifyProjectIntakeByNameAndText(
   fileName,
   text
 ) {
+     if (
+    window.BuildMindProjectIntakeQuality &&
+    typeof window
+      .BuildMindProjectIntakeQuality
+      .classifySignals === 'function'
+  ) {
+    return window
+      .BuildMindProjectIntakeQuality
+      .classifySignals(
+        fileName,
+        text
+      );
+  }
+   
   const source =
     normalizeProjectIntakeText(
       `${fileName || ''} ${text || ''}`
@@ -590,6 +604,20 @@ function classifyProjectIntakeTable(
   documentItem,
   analysis
 ) {
+  if (
+    window.BuildMindProjectIntakeQuality &&
+    typeof window
+      .BuildMindProjectIntakeQuality
+      .classifyTable === 'function'
+  ) {
+    return window
+      .BuildMindProjectIntakeQuality
+      .classifyTable(
+        documentItem,
+        analysis
+      );
+  }
+   
   const nameResult =
     classifyProjectIntakeByNameAndText(
       documentItem
@@ -889,6 +917,19 @@ function detectProjectIntakeOrganization(
 function extractProjectIntakeApprovals(
   documentItem
 ) {
+  if (
+    window.BuildMindProjectIntakeQuality &&
+    typeof window
+      .BuildMindProjectIntakeQuality
+      .extractApprovals === 'function'
+  ) {
+    return window
+      .BuildMindProjectIntakeQuality
+      .extractApprovals(
+        documentItem
+      );
+  }
+   
   const analysis =
     documentItem
       ?.analysis;
@@ -1236,7 +1277,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АВТОМАТИЧЕСКИЙ АНАЛИЗ · V1
+          АВТОМАТИЧЕСКИЙ АНАЛИЗ · V1.1
         </span>
 
         <h2>
@@ -1308,7 +1349,7 @@ function createProjectIntakeUi() {
 
       <div>
         <strong id="projectIntakeMaterialsCount">0</strong>
-        <span>Материалы</span>
+        <span>Кандидаты материалов</span>
       </div>
 
       <div>
@@ -1318,7 +1359,7 @@ function createProjectIntakeUi() {
 
       <div>
         <strong id="projectIntakeApprovalsCount">0</strong>
-        <span>Согласования</span>
+        <span>Вопросы согласований</span>
       </div>
 
       <div class="project-intake-summary-review">
@@ -1529,8 +1570,11 @@ function renderProjectIntakeReviewList(
             return `
               <article class="project-intake-review-item">
                 <span class="project-intake-review-badge">
-                  Согласование / разрешение
-                </span>
+  ${escapeProjectIntakeHtml(
+    item.priorityLabel ||
+    'Согласование / разрешение'
+  )}
+</span>
 
                 <strong>
                   ${escapeProjectIntakeHtml(
@@ -1538,21 +1582,44 @@ function renderProjectIntakeReviewList(
                   )}
                 </strong>
 
-                <p>
+                               <p>
                   ${escapeProjectIntakeHtml(
                     item.organization
                   )}
                 </p>
 
-                <small>
+                ${
+                  item.intentLabel
+                    ? `<p>${escapeProjectIntakeHtml(
+                        item.intentLabel
+                      )}</p>`
+                    : ''
+                }
+
+                                <small>
                   Источник:
                   ${escapeProjectIntakeHtml(
                     item.fileName
                   )},
-                  страница
+                  стр.
                   ${escapeProjectIntakeHtml(
-                    item.pageNumber
+                    Array.isArray(
+                      item.pageNumbers
+                    )
+                      ? item.pageNumbers.join(
+                          ', '
+                        )
+                      : item.pageNumber
                   )}
+                  ${
+                    Number(
+                      item.occurrenceCount || 1
+                    ) > 1
+                      ? ` · найдено упоминаний: ${escapeProjectIntakeHtml(
+                          item.occurrenceCount
+                        )}`
+                      : ''
+                  }
                 </small>
 
                 <blockquote>
@@ -1569,6 +1636,44 @@ function renderProjectIntakeReviewList(
             `;
           }
 
+          if (
+            item.reviewType ===
+            'uncertain-rows-group'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Строки таблицы
+                </span>
+
+                <strong>
+                  Требует проверки: ${escapeProjectIntakeHtml(
+                    item.count
+                  )} строк
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )}
+                </p>
+
+                <small>
+                  BuildMind не использует эти строки автоматически.
+                  Примеры: ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.samples
+                    )
+                      ? item.samples.join(
+                          '; '
+                        )
+                      : ''
+                  ) || 'названия строк не извлечены'}.
+                </small>
+              </article>
+            `;
+          }
+           
           if (
             item.reviewType ===
             'uncertain-row'
@@ -2045,33 +2150,48 @@ async function runBuildMindProjectIntake() {
         }
       );
 
-    result
-      .uncertainRows
-      .slice(
-        0,
-        30
-      )
-      .forEach(
-        function (
-          candidate
-        ) {
-          result
-            .reviewItems
-            .push({
-              reviewType:
-                'uncertain-row',
-
-              fileName:
-                candidate
-                  .fileName,
-
-              name:
-                candidate
-                  .workName ||
-                ''
-            });
-        }
+        if (
+      window.BuildMindProjectIntakeQuality &&
+      typeof window
+        .BuildMindProjectIntakeQuality
+        .groupUncertainRows === 'function'
+    ) {
+      result.reviewItems.push(
+        ...window
+          .BuildMindProjectIntakeQuality
+          .groupUncertainRows(
+            result.uncertainRows
+          )
       );
+    } else {
+      result
+        .uncertainRows
+        .slice(
+          0,
+          30
+        )
+        .forEach(
+          function (
+            candidate
+          ) {
+            result
+              .reviewItems
+              .push({
+                reviewType:
+                  'uncertain-row',
+
+                fileName:
+                  candidate
+                    .fileName,
+
+                name:
+                  candidate
+                    .workName ||
+                  ''
+              });
+          }
+        );
+    }
 
     projectIntakeLastResult =
       result;
