@@ -1,11 +1,11 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.1
+   BUILDMIND PROJECT INTAKE QUALITY — V1.2
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.1';
+  'project-intake-quality-v1.2';
 
 const PROJECT_INTAKE_QUALITY_KIND_RULES = [
   {
@@ -29,6 +29,7 @@ const PROJECT_INTAKE_QUALITY_KIND_RULES = [
     kind: 'agreement',
 
     strong: [
+      /договор[а-яё]*(?:\s+подряд[а-яё]*)?\s*№/,
       /дополнительн[а-яё]*\s+соглашени[а-яё]*/,
       /доп\.?\s*соглашени[а-яё]*/,
       /(^|[^а-яa-z0-9])дс\s*№?/,
@@ -222,6 +223,12 @@ function classifyProjectIntakeQualitySignals(
       text
     );
 
+  const leadText =
+    bodyText.slice(
+      0,
+      2000
+    );
+
   const results =
     PROJECT_INTAKE_QUALITY_KIND_RULES
       .map(
@@ -252,6 +259,18 @@ function classifyProjectIntakeQualitySignals(
               bodyText
             );
 
+          const strongLead =
+            countProjectIntakeQualityMatches(
+              rule.strong,
+              leadText
+            );
+
+          const weakLead =
+            countProjectIntakeQualityMatches(
+              rule.weak,
+              leadText
+            );
+
           const fileScore =
             strongFile * 12 +
             weakFile * 5;
@@ -259,6 +278,10 @@ function classifyProjectIntakeQualitySignals(
           const textScore =
             strongBody * 6 +
             weakBody * 2;
+
+          const leadScore =
+            strongLead * 14 +
+            weakLead * 4;
 
           return {
             kind:
@@ -268,12 +291,18 @@ function classifyProjectIntakeQualitySignals(
 
             textScore,
 
+            leadScore,
+
             score:
               fileScore +
-              textScore,
+              textScore +
+              leadScore,
 
             strongFileSignal:
-              strongFile > 0
+              strongFile > 0,
+
+            strongLeadSignal:
+              strongLead > 0
           };
         }
       )
@@ -309,6 +338,7 @@ function classifyProjectIntakeQualitySignals(
 
   const confidence =
     best.strongFileSignal ||
+    best.strongLeadSignal ||
     (
       best.score >= 12 &&
       clearLead
@@ -334,6 +364,14 @@ function classifyProjectIntakeQualitySignals(
     );
   }
 
+  if (
+    best.leadScore > 0
+  ) {
+    sources.push(
+      'титульная / начальная часть'
+    );
+  }
+
   return {
     kind:
       best.kind,
@@ -348,6 +386,9 @@ function classifyProjectIntakeQualitySignals(
 
     textScore:
       best.textScore,
+
+    leadScore:
+      best.leadScore,
 
     strongFileSignal:
       best.strongFileSignal,
@@ -691,6 +732,92 @@ function isProjectIntakeQualityStampContext(
   );
 }
 
+function getProjectIntakeQualitySentenceContext(
+  text,
+  matchIndex,
+  matchLength
+) {
+  const source =
+    String(text || '');
+
+  const boundaryPattern =
+    /[.!?;\n\r]/;
+
+  let start =
+    Math.max(
+      0,
+      Number(matchIndex) || 0
+    );
+
+  while (
+    start > 0 &&
+    !boundaryPattern.test(
+      source[start - 1]
+    )
+  ) {
+    start -= 1;
+  }
+
+  let end =
+    Math.min(
+      source.length,
+      (Number(matchIndex) || 0) +
+        (Number(matchLength) || 0)
+    );
+
+  while (
+    end < source.length &&
+    !boundaryPattern.test(
+      source[end]
+    )
+  ) {
+    end += 1;
+  }
+
+  if (
+    end < source.length
+  ) {
+    end += 1;
+  }
+
+  const sentence =
+    source
+      .slice(
+        start,
+        end
+      )
+      .replace(
+        /\s+/g,
+        ' '
+      )
+      .trim();
+
+  if (
+    sentence.length >= 20
+  ) {
+    return sentence;
+  }
+
+  return source
+    .slice(
+      Math.max(
+        0,
+        (Number(matchIndex) || 0) - 90
+      ),
+      Math.min(
+        source.length,
+        (Number(matchIndex) || 0) +
+          (Number(matchLength) || 0) +
+          120
+      )
+    )
+    .replace(
+      /\s+/g,
+      ' '
+    )
+    .trim();
+}
+
 function getProjectIntakeQualityApprovalType(
   context
 ) {
@@ -854,7 +981,7 @@ function getProjectIntakeQualityApprovalIntent(
   }
 
   if (
-    /согласовать|необходимо\s+согласован|следует\s+согласован|требуется\s+согласован|разрешени[а-яё]*|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|техническ[а-яё]*\s+услови[а-яё]*|вызов[а-яё]*\s+представител[а-яё]*|уведомить/.test(
+    /согласовать|необходимо\s+согласован|следует\s+согласован|требуется\s+согласован|разрешени[а-яё]*|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|вызов[а-яё]*\s+представител[а-яё]*|уведомить/.test(
       text
     )
   ) {
@@ -965,6 +1092,20 @@ function groupProjectIntakeQualityApprovals(
           function (
             group
           ) {
+            const sameNearbyOccurrence =
+              Number.isFinite(
+                group.matchIndex
+              ) &&
+              Number.isFinite(
+                candidate.matchIndex
+              ) &&
+              group.pageNumber ===
+                candidate.pageNumber &&
+              Math.abs(
+                group.matchIndex -
+                candidate.matchIndex
+              ) <= 140;
+
             return (
               group.type ===
                 candidate.type &&
@@ -974,8 +1115,11 @@ function groupProjectIntakeQualityApprovals(
                 candidate.intent &&
               group.fileName ===
                 candidate.fileName &&
-              group.signature ===
-                signature
+              (
+                group.signature ===
+                  signature ||
+                sameNearbyOccurrence
+              )
             );
           }
         );
@@ -1110,7 +1254,7 @@ function extractProjectIntakeQualityApprovals(
               250
           );
 
-        const context =
+        const wideContext =
           text
             .slice(
               start,
@@ -1122,10 +1266,17 @@ function extractProjectIntakeQualityApprovals(
             )
             .trim();
 
+        const context =
+          getProjectIntakeQualitySentenceContext(
+            text,
+            match.index,
+            match[0].length
+          );
+
         if (
           context.length < 20 ||
           isProjectIntakeQualityStampContext(
-            context
+            wideContext
           )
         ) {
           continue;
@@ -1238,6 +1389,12 @@ function extractProjectIntakeQualityApprovals(
             page.pageNumber,
 
           context,
+
+          matchIndex:
+            match.index,
+
+          matchedText:
+            match[0],
 
           sourceType:
             'document',

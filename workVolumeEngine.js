@@ -2,7 +2,7 @@
 
 /*
   ==================================================
-  BUILDMIND WORK VOLUME ENGINE — DEMO V2.1
+  BUILDMIND WORK VOLUME ENGINE — DEMO V2.2
   ==================================================
 
   Читает XLSX / XLS / CSV, ищет таблицы вида
@@ -12,7 +12,7 @@
 */
 
 const BUILDMIND_WORK_VOLUME_ENGINE_VERSION =
-  'work-volume-engine-demo-v2.1';
+  'work-volume-engine-demo-v2.2';
 
 const WORK_VOLUME_SUPPORTED_EXTENSIONS = [
   'xlsx',
@@ -53,6 +53,18 @@ const WORK_VOLUME_HEADER_RULES = {
     'кол во',
     'объем',
     'объём'
+  ],
+
+  startDate: [
+    'начало',
+    'начало работ',
+    'дата начала'
+  ],
+
+  finishDate: [
+    'окончание',
+    'окончание работ',
+    'дата окончания'
   ]
 };
 
@@ -147,11 +159,129 @@ function normalizeWorkVolumeUnit(
     компл: 'компл.',
     комплект: 'компл.',
     комплектов: 'компл.',
+    комплекс: 'компл.',
     т: 'т',
     кг: 'кг'
   };
 
   return units[normalized] || '';
+}
+
+
+function parseWorkVolumeDate(
+  value
+) {
+  if (
+    value instanceof Date &&
+    Number.isFinite(
+      value.getTime()
+    )
+  ) {
+    return value
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  if (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value > 20000 &&
+    value < 80000
+  ) {
+    const excelEpoch =
+      Date.UTC(
+        1899,
+        11,
+        30
+      );
+
+    return new Date(
+      excelEpoch +
+        Math.round(value) *
+          86400000
+    )
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  const text =
+    String(value ?? '')
+      .trim();
+
+  if (!text) {
+    return null;
+  }
+
+  const isoMatch =
+    text.match(
+      /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/
+    );
+
+  if (isoMatch) {
+    return [
+      isoMatch[1],
+      String(isoMatch[2]).padStart(2, '0'),
+      String(isoMatch[3]).padStart(2, '0')
+    ].join('-');
+  }
+
+  const russianMatch =
+    text.match(
+      /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})/
+    );
+
+  if (russianMatch) {
+    const year =
+      russianMatch[3].length === 2
+        ? Number(russianMatch[3]) + 2000
+        : Number(russianMatch[3]);
+
+    return [
+      year,
+      String(russianMatch[2]).padStart(2, '0'),
+      String(russianMatch[1]).padStart(2, '0')
+    ].join('-');
+  }
+
+  return null;
+}
+
+
+function getWorkVolumeDurationDays(
+  startDate,
+  finishDate
+) {
+  if (
+    !startDate ||
+    !finishDate
+  ) {
+    return null;
+  }
+
+  const start =
+    Date.parse(
+      startDate + 'T00:00:00Z'
+    );
+
+  const finish =
+    Date.parse(
+      finishDate + 'T00:00:00Z'
+    );
+
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(finish) ||
+    finish < start
+  ) {
+    return null;
+  }
+
+  return (
+    Math.round(
+      (finish - start) /
+        86400000
+    ) + 1
+  );
 }
 
 
@@ -193,6 +323,7 @@ const WORK_VOLUME_TABLE_CLASSIFICATION_RULES = {
   ],
 
   schedule: [
+    'гпр',
     'график производства работ',
     'календарный график',
     'начало работ',
@@ -309,6 +440,58 @@ function classifyWorkVolumeTable(
         .schedule
     );
 
+  const headerCells =
+    (Array.isArray(rows) ? rows : [])
+      .slice(0, 40)
+      .flatMap(function (row) {
+        return Array.isArray(row)
+          ? row
+          : [];
+      })
+      .map(
+        normalizeWorkVolumeText
+      )
+      .filter(Boolean);
+
+  const hasStartHeader =
+    headerCells.includes(
+      'начало'
+    ) ||
+    headerCells.includes(
+      'начало работ'
+    );
+
+  const hasFinishHeader =
+    headerCells.includes(
+      'окончание'
+    ) ||
+    headerCells.includes(
+      'окончание работ'
+    );
+
+  const hasCalendarScale =
+    headerCells.some(function (cell) {
+      return (
+        /^(?:январь|февраль|март|апрель|май|июнь|июль|август|сентябрь|октябрь|ноябрь|декабрь)$/.test(
+          cell
+        ) ||
+        /^\d+\s*нед/.test(
+          cell
+        ) ||
+        /^20\d{2}\s*г?$/.test(
+          cell
+        )
+      );
+    });
+
+  const hasScheduleStructure =
+    hasStartHeader &&
+    hasFinishHeader &&
+    (
+      hasCalendarScale ||
+      scheduleEvidence.length >= 1
+    );
+
   const hasPriceStructure =
     mixedEvidence.some(
       function (phrase) {
@@ -385,7 +568,8 @@ function classifyWorkVolumeTable(
   */
 
   if (
-    scheduleEvidence.length >= 2
+    scheduleEvidence.length >= 2 ||
+    hasScheduleStructure
   ) {
     return {
       id:
@@ -403,7 +587,20 @@ function classifyWorkVolumeTable(
       },
 
       evidence:
-        scheduleEvidence,
+        Array.from(
+          new Set([
+            ...scheduleEvidence,
+            ...(hasStartHeader
+              ? ['колонка «Начало»']
+              : []),
+            ...(hasFinishHeader
+              ? ['колонка «Окончание»']
+              : []),
+            ...(hasCalendarScale
+              ? ['календарная шкала']
+              : [])
+          ])
+        ),
 
       allowGenericNameHeader:
         false,
@@ -591,6 +788,12 @@ function mapWorkVolumeHeaderRow(
     quantityColumn:
       null,
 
+    startDateColumn:
+      null,
+
+    finishDateColumn:
+      null,
+
     workScore:
       0,
 
@@ -598,6 +801,12 @@ function mapWorkVolumeHeaderRow(
       0,
 
     quantityScore:
+      0,
+
+    startDateScore:
+      0,
+
+    finishDateScore:
       0,
 
     score:
@@ -688,6 +897,44 @@ function mapWorkVolumeHeaderRow(
           quantityScore;
 
         result.quantityColumn =
+          columnIndex;
+      }
+
+
+      const startDateScore =
+        scoreWorkVolumeHeaderCell(
+          cellValue,
+          WORK_VOLUME_HEADER_RULES
+            .startDate
+        );
+
+      if (
+        startDateScore >
+        result.startDateScore
+      ) {
+        result.startDateScore =
+          startDateScore;
+
+        result.startDateColumn =
+          columnIndex;
+      }
+
+
+      const finishDateScore =
+        scoreWorkVolumeHeaderCell(
+          cellValue,
+          WORK_VOLUME_HEADER_RULES
+            .finishDate
+        );
+
+      if (
+        finishDateScore >
+        result.finishDateScore
+      ) {
+        result.finishDateScore =
+          finishDateScore;
+
+        result.finishDateColumn =
           columnIndex;
       }
     }
@@ -1460,6 +1707,24 @@ function analyzeWorkVolumeRows(
         ]
       );
 
+    const startDate =
+      header.startDateColumn !== null
+        ? parseWorkVolumeDate(
+            row[
+              header.startDateColumn
+            ]
+          )
+        : null;
+
+    const finishDate =
+      header.finishDateColumn !== null
+        ? parseWorkVolumeDate(
+            row[
+              header.finishDateColumn
+            ]
+          )
+        : null;
+
     if (
       !workName ||
       workName.length < 3 ||
@@ -1475,7 +1740,13 @@ function analyzeWorkVolumeRows(
         workName
       );
 
-    const rowClassification =
+    const durationDays =
+      getWorkVolumeDurationDays(
+        startDate,
+        finishDate
+      );
+
+    let rowClassification =
       classifyWorkVolumeRowCandidate({
         workName,
         quantity,
@@ -1483,12 +1754,109 @@ function analyzeWorkVolumeRows(
         taxonomy
       });
 
+    const isScheduleTable =
+      tableClassification.id ===
+        'schedule-table';
+
+    if (
+      isScheduleTable &&
+      startDate &&
+      finishDate &&
+      rowClassification.rowType ===
+        'uncertain'
+    ) {
+      rowClassification = {
+        rowType: 'work',
+        rowLabel:
+          'Строка графика работ',
+        confidence: {
+          level: 'medium',
+          label: 'Средняя'
+        },
+        evidence: [
+          'валидная пара дат ГПР'
+        ],
+        eligibleForAutomaticWorkVolume:
+          false
+      };
+    } else if (
+      isScheduleTable &&
+      !startDate &&
+      !finishDate &&
+      /:/.test(workName)
+    ) {
+      rowClassification = {
+        rowType: 'section',
+        rowLabel:
+          'Раздел / объект графика',
+        confidence: {
+          level: 'medium',
+          label: 'Средняя'
+        },
+        evidence: [
+          'строка без дат с заголовочной структурой'
+        ],
+        eligibleForAutomaticWorkVolume:
+          false
+      };
+    }
+
+    const scheduleReviewReasons = [];
+
+    if (isScheduleTable) {
+      if (
+        Boolean(startDate) !==
+        Boolean(finishDate)
+      ) {
+        scheduleReviewReasons.push(
+          'Заполнена только одна из дат начала / окончания.'
+        );
+      }
+
+      if (
+        startDate &&
+        finishDate &&
+        durationDays === null
+      ) {
+        scheduleReviewReasons.push(
+          'Дата окончания раньше даты начала.'
+        );
+      }
+
+      if (
+        Number.isFinite(durationDays) &&
+        durationDays > 180
+      ) {
+        scheduleReviewReasons.push(
+          'Продолжительность более 180 календарных дней — проверить год и даты.'
+        );
+      }
+    }
+
     candidates.push({
       workName,
 
       quantity,
 
       unit,
+
+      startDate,
+
+      finishDate,
+
+      durationDays:
+        durationDays,
+
+      scheduleDataComplete:
+        Boolean(
+          startDate &&
+          finishDate
+        ),
+
+      scheduleReviewRequired:
+        scheduleReviewReasons.length > 0,
+
+      scheduleReviewReasons,
 
       sourceType:
         tableClassification.id ===
@@ -1605,6 +1973,12 @@ function analyzeWorkVolumeRows(
       quantityColumn:
         header.quantityColumn,
 
+      startDateColumn:
+        header.startDateColumn,
+
+      finishDateColumn:
+        header.finishDateColumn,
+
       score:
         header.score,
 
@@ -1643,7 +2017,7 @@ function getWorkVolumeSheetRows(
       worksheet,
       {
         header: 1,
-        raw: false,
+        raw: true,
         defval: '',
         blankrows: false
       }
@@ -1875,7 +2249,7 @@ async function analyzeWorkVolumeFile(
         arrayBuffer,
         {
           type: 'array',
-          cellDates: false
+          cellDates: true
         }
       );
 
