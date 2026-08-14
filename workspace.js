@@ -558,6 +558,11 @@ const projectIntake =
       'documentRegistrySection'
     );
 
+  const changeSetSection =
+    getWorkspaceElement(
+      'changeSetSection'
+    );
+
   const assistant =
     document.querySelector(
       '.assistant-card'
@@ -763,15 +768,21 @@ moveWorkspaceNode(
     )
   );
 
-  views.changes.appendChild(
-    createWorkspacePlaceholder(
-      'Изменений пока нет',
-
-     'Следующий модуль изменений проекта будет собирать ' +
-      'документы одного изменения и показывать ' +
-      'добавленные, изменённые и исключённые позиции.'
-    )
+  moveWorkspaceNode(
+    changeSetSection,
+    views.changes
   );
+
+  if (!changeSetSection) {
+    views.changes.appendChild(
+      createWorkspacePlaceholder(
+        'Изменений пока нет',
+
+        'Зарегистрируйте новую редакцию документа, ' +
+        'чтобы сравнить работы, объёмы, материалы и даты.'
+      )
+    );
+  }
 
 
   /*
