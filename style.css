@@ -2705,6 +2705,71 @@ button:disabled {
 }
 
 
+#workspaceView-materials
+#materialArchiveSection,
+
+#workspaceView-history
+#materialHistorySection {
+  width: 100%;
+}
+
+
+.material-change-reason-field {
+  grid-column:
+    1 / -1;
+}
+
+
+.material-form-actions,
+.material-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+
+.material-form-actions {
+  margin-top: 14px;
+}
+
+
+.material-row-actions {
+  min-width: 190px;
+}
+
+
+.material-archive-btn {
+  border-color: #efb4b4;
+  color: #a61b1b;
+}
+
+
+#materialHistoryTable td:nth-child(4) {
+  min-width: 360px;
+  white-space: normal;
+}
+
+
+.badge.created,
+.badge.restored {
+  background: #e5f8ec;
+  color: #126b34;
+}
+
+
+.badge.updated {
+  background: #e8f0ff;
+  color: #174ea6;
+}
+
+
+.badge.archived {
+  background: #fff0e0;
+  color: #9a4b00;
+}
+
+
 /* Планшет */
 
 @media (max-width: 1000px) {

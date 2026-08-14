@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.1
+   BUILDMIND PROJECT INTAKE — V1.2
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.1';
+  'project-intake-v1.2';
 
 const PROJECT_INTAKE_AUTO_DELAY =
   350;
@@ -1244,6 +1244,66 @@ async function analyzeProjectIntakeTable(
   };
 }
 
+function getProjectIntakeScheduleReviewItems(
+  candidates,
+  fileName
+) {
+  return (
+    Array.isArray(candidates)
+      ? candidates
+      : []
+  )
+    .filter(function (candidate) {
+      return (
+        candidate
+          ?.scheduleReviewRequired ===
+        true
+      );
+    })
+    .map(function (candidate) {
+      return {
+        reviewType:
+          'schedule-anomaly',
+
+        fileName:
+          fileName ||
+          candidate.sourceDocument ||
+          '',
+
+        sourceSheet:
+          candidate.sourceSheet ||
+          '',
+
+        sourceRow:
+          candidate.sourceRow ||
+          null,
+
+        workName:
+          candidate.workName ||
+          '',
+
+        startDate:
+          candidate.startDate ||
+          null,
+
+        finishDate:
+          candidate.finishDate ||
+          null,
+
+        durationDays:
+          candidate.durationDays ||
+          null,
+
+        reasons:
+          Array.isArray(
+            candidate.scheduleReviewReasons
+          )
+            ? candidate.scheduleReviewReasons
+            : []
+      };
+    });
+}
+
 function createProjectIntakeUi() {
   if (
     document.getElementById(
@@ -1563,6 +1623,64 @@ function renderProjectIntakeReviewList(
       )
       .map(
         function (item) {
+          if (
+            item.reviewType ===
+            'schedule-anomaly'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Проверка дат ГПР
+                </span>
+
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.workName ||
+                    'Строка графика работ'
+                  )}
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )}
+                  ${
+                    item.sourceSheet
+                      ? ` · лист ${escapeProjectIntakeHtml(
+                          item.sourceSheet
+                        )}`
+                      : ''
+                  }
+                  ${
+                    item.sourceRow
+                      ? ` · строка ${escapeProjectIntakeHtml(
+                          item.sourceRow
+                        )}`
+                      : ''
+                  }
+                </p>
+
+                <small>
+                  Начало: ${escapeProjectIntakeHtml(
+                    item.startDate || '—'
+                  )} · окончание: ${escapeProjectIntakeHtml(
+                    item.finishDate || '—'
+                  )} · длительность: ${escapeProjectIntakeHtml(
+                    item.durationDays || '—'
+                  )} дн.
+                </small>
+
+                <p class="project-intake-review-hint">
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(item.reasons)
+                      ? item.reasons.join(' ')
+                      : ''
+                  )}
+                </p>
+              </article>
+            `;
+          }
+
           if (
             item.reviewType ===
             'approval'
@@ -2064,6 +2182,13 @@ async function runBuildMindProjectIntake() {
         analyzed
           .materials
           .length;
+
+      result.reviewItems.push(
+        ...getProjectIntakeScheduleReviewItems(
+          analyzed.works,
+          documentItem.file.name
+        )
+      );
 
       result
         .approvals

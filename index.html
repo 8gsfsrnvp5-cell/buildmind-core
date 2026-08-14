@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>BuildMind · Инженерный контроль проекта</title>
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
   <header class="topbar">
@@ -900,7 +900,15 @@
   </div>
 </div>
 </section>
-      <h2>Добавить материал</h2>
+      <h2 id="materialFormTitle">Добавить материал</h2>
+
+      <p
+        id="materialFormMessage"
+        class="muted"
+      >
+        Новая позиция получит постоянный ID. Все дальнейшие изменения будут сохранены в истории.
+      </p>
+
       <div class="grid add-grid">
        <label>
   Проект
@@ -942,9 +950,99 @@
         <label>Подтверждено поставщиком<input id="newConfirmed" type="number" value="0" /></label>
         <label>Дата поставки<input id="newDelivery" type="date" /></label>
         <label>Срок поставки, дней<input id="newLead" type="number" value="1" /></label>
+
+        <label class="material-change-reason-field">
+          Комментарий к добавлению или изменению
+          <input
+            id="materialChangeReason"
+            placeholder="Например: уточнено по новой редакции ВОР"
+          />
+        </label>
       </div>
-      <button id="addBtn" class="primary">Добавить и пересчитать</button>
-      <button id="resetBtn" class="secondary">Очистить материалы</button>
+
+      <div class="material-form-actions">
+        <button id="addBtn" class="primary">Добавить и пересчитать</button>
+
+        <button
+          id="cancelMaterialEditBtn"
+          type="button"
+          class="secondary hidden"
+        >
+          Отменить редактирование
+        </button>
+
+        <button id="resetBtn" class="secondary">Исключить все активные</button>
+      </div>
+    </section>
+
+    <section
+      id="materialArchiveSection"
+      class="card"
+    >
+      <h2>
+        Архив материалов
+        <span class="muted">(<span id="materialArchiveCount">0</span>)</span>
+      </h2>
+
+      <p class="muted">
+        Исключённые позиции не участвуют в расчётах, но сохраняются и могут быть восстановлены.
+      </p>
+
+      <p id="materialArchiveEmpty" class="muted">
+        Исключённых материалов пока нет.
+      </p>
+
+      <div class="table-wrap">
+        <table id="materialArchiveTable">
+          <thead>
+            <tr>
+              <th>Проект</th>
+              <th>Работа</th>
+              <th>Материал</th>
+              <th>Количество</th>
+              <th>Ед.</th>
+              <th>Исключён</th>
+              <th>Причина</th>
+              <th>Управление</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section
+      id="materialHistorySection"
+      class="card"
+    >
+      <h2>
+        История изменений материалов
+        <span class="muted">(<span id="materialHistoryCount">0</span>)</span>
+      </h2>
+
+      <p class="muted">
+        BuildMind сохраняет добавление, корректировку, исключение и восстановление. Показываются последние 100 событий.
+      </p>
+
+      <p id="materialHistoryEmpty" class="muted">
+        История пока пуста.
+      </p>
+
+      <div class="table-wrap">
+        <table id="materialHistoryTable">
+          <thead>
+            <tr>
+              <th>Дата и время</th>
+              <th>Событие</th>
+              <th>Материал</th>
+              <th>Изменение</th>
+              <th>Основание</th>
+              <th>Роль</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
   </main>
   <script type="module">
@@ -965,7 +1063,7 @@
 <script src="planningRules.js?v=2"></script>
 <script src="engineeringAudit.js?v=1"></script>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 
 <script src="projectCore.js?v=1"></script>
 <script src="documentRegistry.js?v=3"></script>
@@ -980,9 +1078,8 @@
 
 <script src="projectIntakeQuality.js?v=1"></script>
 <script src="projectIntake.js?v=2"></script>
-<script src="workspace.js?v=2"></script>
+<script src="workspace.js?v=3"></script>
       
 </body>
 </html>
  
-

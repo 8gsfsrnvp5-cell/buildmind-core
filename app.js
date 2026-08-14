@@ -1,7 +1,156 @@
 const STORAGE_KEY =
   'buildmind-procurement-data-v2-clean';
 
-let materials = loadMaterials();
+const MATERIAL_ARCHIVE_STORAGE_KEY =
+  'buildmind-material-archive-v1';
+
+const MATERIAL_HISTORY_STORAGE_KEY =
+  'buildmind-material-history-v1';
+
+const MATERIAL_HISTORY_LIMIT = 1000;
+
+let materials =
+  loadMaterials().map(
+    function (material) {
+      return normalizeMaterialRecord(
+        material,
+        'active'
+      );
+    }
+  );
+
+let archivedMaterials =
+  loadStoredArray(
+    MATERIAL_ARCHIVE_STORAGE_KEY,
+    'архив материалов'
+  ).map(
+    function (material) {
+      return normalizeMaterialRecord(
+        material,
+        'archived'
+      );
+    }
+  );
+
+let materialHistory =
+  loadStoredArray(
+    MATERIAL_HISTORY_STORAGE_KEY,
+    'историю материалов'
+  );
+
+let editingMaterialId = '';
+
+
+function createMaterialRecordId(
+  prefix = 'material'
+) {
+  if (
+    window.crypto &&
+    typeof window.crypto.randomUUID ===
+      'function'
+  ) {
+    return (
+      `${prefix}-` +
+      window.crypto.randomUUID()
+    );
+  }
+
+  return (
+    `${prefix}-` +
+    Date.now() +
+    '-' +
+    Math.random()
+      .toString(16)
+      .slice(2)
+  );
+}
+
+
+function cloneMaterialValue(value) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return value;
+  }
+
+  return JSON.parse(
+    JSON.stringify(value)
+  );
+}
+
+
+function normalizeMaterialRecord(
+  material,
+  status
+) {
+  const now =
+    new Date().toISOString();
+
+  const source =
+    material &&
+    typeof material === 'object'
+      ? material
+      : {};
+
+  return {
+    ...source,
+
+    id:
+      source.id ||
+      createMaterialRecordId(),
+
+    status:
+      status === 'archived'
+        ? 'archived'
+        : 'active',
+
+    revision:
+      Math.max(
+        Number(source.revision) || 1,
+        1
+      ),
+
+    createdAt:
+      source.createdAt ||
+      now,
+
+    updatedAt:
+      source.updatedAt ||
+      now
+  };
+}
+
+
+function loadStoredArray(
+  storageKey,
+  label
+) {
+  const saved =
+    localStorage.getItem(
+      storageKey
+    );
+
+  if (!saved) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      JSON.parse(saved);
+
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn(
+      `Не удалось прочитать ${label}:`,
+      error
+    );
+  }
+
+  return [];
+}
 
 function loadMaterials() {
   const saved =
@@ -30,8 +179,123 @@ function loadMaterials() {
   return [];
 }
 function saveMaterials() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(materials));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(materials)
+  );
+
+  localStorage.setItem(
+    MATERIAL_ARCHIVE_STORAGE_KEY,
+    JSON.stringify(
+      archivedMaterials
+    )
+  );
+
+  localStorage.setItem(
+    MATERIAL_HISTORY_STORAGE_KEY,
+    JSON.stringify(
+      materialHistory
+    )
+  );
 }
+
+
+function recordMaterialHistory(
+  action,
+  before,
+  after,
+  reason
+) {
+  const material =
+    after ||
+    before ||
+    {};
+
+  materialHistory.push({
+    id:
+      createMaterialRecordId(
+        'material-event'
+      ),
+
+    materialId:
+      material.id ||
+      '',
+
+    materialName:
+      material.name ||
+      'Без названия',
+
+    action:
+      action ||
+      'updated',
+
+    occurredAt:
+      new Date().toISOString(),
+
+    actorRole:
+      'engineer',
+
+    reason:
+      String(reason || '').trim(),
+
+    before:
+      cloneMaterialValue(before),
+
+    after:
+      cloneMaterialValue(after)
+  });
+
+  if (
+    materialHistory.length >
+    MATERIAL_HISTORY_LIMIT
+  ) {
+    materialHistory =
+      materialHistory.slice(
+        -MATERIAL_HISTORY_LIMIT
+      );
+  }
+}
+
+
+function notifyMaterialsChanged(
+  action,
+  materialIds
+) {
+  window.dispatchEvent(
+    new CustomEvent(
+      'buildmind:materials-changed',
+      {
+        detail: {
+          action:
+            action ||
+            'updated',
+
+          materialIds:
+            Array.isArray(
+              materialIds
+            )
+              ? [...materialIds]
+              : [],
+
+          activeCount:
+            materials.length,
+
+          archivedCount:
+            archivedMaterials.length
+        }
+      }
+    )
+  );
+}
+
+
+/*
+  Миграция прежних строк материалов:
+  добавляем постоянные ID и метаданные,
+  не создавая ложных событий истории.
+*/
+
+saveMaterials();
 
 function parseDate(value) {
   const date = new Date(value + 'T00:00:00');
@@ -117,9 +381,9 @@ function riskFor(row, needDate, today) {
       level: 'critical',
       text: 'Критический',
       action:
-        `Оформить дополнительную заявку на ` +
+        `Рекомендуется проверить дополнительную потребность: ` +
         `${deficit} ${row.unit}. ` +
-        `Крайняя дата заказа: ` +
+        `Расчётная крайняя дата заказа: ` +
         `${formatDate(orderDeadline)}.`
     };
   }
@@ -133,8 +397,8 @@ function riskFor(row, needDate, today) {
       text: 'Критический',
       action:
         'Поставка позже даты потребности. ' +
-        'Ускорить поставку или найти ' +
-        'резервного поставщика.'
+        'Рекомендуется рассмотреть ускорение поставки ' +
+        'или резервный источник.'
     };
   }
 
@@ -376,51 +640,51 @@ function buildControlEvent(row, index, today) {
       'Ожидаемая дата поставки уже прошла, а свободного остатка недостаточно.';
 
     recommendation =
-      'Уточнить фактический статус у поставщика и подтвердить новую дату доставки.';
+      'Рекомендуется уточнить фактический статус у поставщика и подтвердить новую дату доставки.';
   } else if (primary === 'critical') {
     if (!needDate) {
       reason =
         'Для материала не найдена подтверждённая дата потребности.';
 
       recommendation =
-        'Проверить привязку материала к контексту работы и графику.';
+        'Рекомендуется проверить привязку материала к контексту работы и графику.';
     } else if (deliveryAfterNeed) {
       reason =
         'Поставка запланирована позже даты потребности материала.';
 
       recommendation =
-        'Ускорить поставку, найти резервный источник или проверить допустимый аналог.';
+        'Рекомендуется рассмотреть ускорение поставки, резервный источник или допустимый аналог.';
     } else {
       reason =
         `После учёта склада и подтверждённых поставок не хватает ${deficit} ${row.unit || ''}.`;
 
       recommendation =
-        'Срочно проверить закупку и дополнительную потребность.';
+        'Рекомендуется безотлагательно проверить закупку и дополнительную потребность.';
     }
   } else if (primary === 'order') {
     reason =
-      `Необходимо дополнительно заказать ${deficit} ${row.unit || ''}.`;
+      `Предварительный расчёт показывает дефицит ${deficit} ${row.unit || ''}.`;
 
     recommendation =
-      'Оформить заявку до крайней даты заказа.';
+      'Рекомендуется подготовить заявку до расчётной крайней даты заказа.';
   } else if (primary === 'low-stock') {
     reason =
       'Свободный складской остаток меньше потребности работы.';
 
     recommendation =
-      'Проверить подтверждённые поставки и доступные складские резервы.';
+      'Рекомендуется проверить подтверждённые поставки и доступные складские резервы.';
   } else if (primary === 'expected') {
     reason =
       'Поставка подтверждена поставщиком и ожидается.';
 
     recommendation =
-      'Контролировать дату отгрузки и фактическое поступление.';
+      'Рекомендуется контролировать дату отгрузки и фактическое поступление.';
   } else {
     reason =
       'Свободного складского остатка достаточно для текущей потребности.';
 
     recommendation =
-      'Поддерживать актуальность складских данных.';
+      'Рекомендуется поддерживать актуальность складских данных.';
   }
 
   return {
@@ -916,6 +1180,304 @@ function initializeOperationalControlCenter() {
 
   updateControlButtonsState();
 }
+
+
+const MATERIAL_HISTORY_FIELD_LABELS = {
+  project: 'Проект',
+  object: 'Объект',
+  work: 'Работа',
+  name: 'Материал',
+  responsible: 'Ответственный',
+  need: 'Потребность',
+  unit: 'Единица',
+  stock: 'Общий остаток',
+  reserved: 'Резерв',
+  confirmed: 'Подтверждено',
+  deliveryDate: 'Дата поставки',
+  leadDays: 'Срок поставки'
+};
+
+
+function formatMaterialHistoryDate(
+  value
+) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return '—';
+  }
+
+  return date.toLocaleString(
+    'ru-RU',
+    {
+      dateStyle: 'short',
+      timeStyle: 'medium'
+    }
+  );
+}
+
+
+function formatMaterialHistoryValue(
+  value
+) {
+  if (
+    value === '' ||
+    value === null ||
+    value === undefined
+  ) {
+    return '—';
+  }
+
+  return String(value);
+}
+
+
+function describeMaterialHistoryEvent(
+  event
+) {
+  const before =
+    event.before ||
+    {};
+
+  const after =
+    event.after ||
+    {};
+
+  if (
+    event.action === 'created'
+  ) {
+    return (
+      'Создана позиция: ' +
+      formatMaterialHistoryValue(
+        after.need
+      ) +
+      ' ' +
+      formatMaterialHistoryValue(
+        after.unit
+      ) +
+      '.'
+    );
+  }
+
+  if (
+    event.action === 'archived'
+  ) {
+    return (
+      'Позиция исключена из активного расчёта. ' +
+      'Предыдущие данные сохранены.'
+    );
+  }
+
+  if (
+    event.action === 'restored'
+  ) {
+    return (
+      'Позиция восстановлена в активный расчёт.'
+    );
+  }
+
+  const changes = [];
+
+  Object.keys(
+    MATERIAL_HISTORY_FIELD_LABELS
+  ).forEach(
+    function (field) {
+      const beforeValue =
+        formatMaterialHistoryValue(
+          before[field]
+        );
+
+      const afterValue =
+        formatMaterialHistoryValue(
+          after[field]
+        );
+
+      if (
+        beforeValue !==
+        afterValue
+      ) {
+        changes.push(
+          MATERIAL_HISTORY_FIELD_LABELS[
+            field
+          ] +
+          ': ' +
+          beforeValue +
+          ' → ' +
+          afterValue
+        );
+      }
+    }
+  );
+
+  return changes.length > 0
+    ? changes.join('; ')
+    : 'Сохранение без изменения контролируемых полей.';
+}
+
+
+function materialHistoryActionLabel(
+  action
+) {
+  const labels = {
+    created: 'Добавлено',
+    updated: 'Изменено',
+    archived: 'Исключено',
+    restored: 'Восстановлено'
+  };
+
+  return (
+    labels[action] ||
+    'Изменено'
+  );
+}
+
+
+function renderMaterialArchive() {
+  const tbody =
+    document.querySelector(
+      '#materialArchiveTable tbody'
+    );
+
+  const empty =
+    document.getElementById(
+      'materialArchiveEmpty'
+    );
+
+  const count =
+    document.getElementById(
+      'materialArchiveCount'
+    );
+
+  if (!tbody) {
+    return;
+  }
+
+  tbody.innerHTML = '';
+
+  if (count) {
+    count.textContent =
+      String(
+        archivedMaterials.length
+      );
+  }
+
+  if (empty) {
+    empty.classList.toggle(
+      'hidden',
+      archivedMaterials.length > 0
+    );
+  }
+
+  archivedMaterials
+    .slice()
+    .reverse()
+    .forEach(
+      function (material) {
+        const tr =
+          document.createElement(
+            'tr'
+          );
+
+        tr.innerHTML = `
+          <td>${escapeControlHtml(material.project || '—')}</td>
+          <td>${escapeControlHtml(material.work || '—')}</td>
+          <td>${escapeControlHtml(material.name || '—')}</td>
+          <td>${escapeControlHtml(formatControlNumber(material.need))}</td>
+          <td>${escapeControlHtml(material.unit || '—')}</td>
+          <td>${escapeControlHtml(formatMaterialHistoryDate(material.archivedAt))}</td>
+          <td>${escapeControlHtml(material.archiveReason || 'Без пояснения')}</td>
+          <td><button type="button" class="small-btn material-restore-btn">Восстановить</button></td>
+        `;
+
+        const restoreButton =
+          tr.querySelector(
+            '.material-restore-btn'
+          );
+
+        if (restoreButton) {
+          restoreButton.addEventListener(
+            'click',
+            function () {
+              restoreArchivedMaterial(
+                material.id
+              );
+            }
+          );
+        }
+
+        tbody.appendChild(tr);
+      }
+    );
+}
+
+
+function renderMaterialHistory() {
+  const tbody =
+    document.querySelector(
+      '#materialHistoryTable tbody'
+    );
+
+  const empty =
+    document.getElementById(
+      'materialHistoryEmpty'
+    );
+
+  const count =
+    document.getElementById(
+      'materialHistoryCount'
+    );
+
+  if (!tbody) {
+    return;
+  }
+
+  tbody.innerHTML = '';
+
+  if (count) {
+    count.textContent =
+      String(
+        materialHistory.length
+      );
+  }
+
+  if (empty) {
+    empty.classList.toggle(
+      'hidden',
+      materialHistory.length > 0
+    );
+  }
+
+  materialHistory
+    .slice()
+    .reverse()
+    .slice(0, 100)
+    .forEach(
+      function (event) {
+        const tr =
+          document.createElement(
+            'tr'
+          );
+
+        tr.innerHTML = `
+          <td>${escapeControlHtml(formatMaterialHistoryDate(event.occurredAt))}</td>
+          <td><span class="badge ${escapeControlHtml(event.action || 'updated')}">${escapeControlHtml(materialHistoryActionLabel(event.action))}</span></td>
+          <td>${escapeControlHtml(event.materialName || '—')}</td>
+          <td>${escapeControlHtml(describeMaterialHistoryEvent(event))}</td>
+          <td>${escapeControlHtml(event.reason || '—')}</td>
+          <td>${escapeControlHtml(event.actorRole === 'engineer' ? 'Инженер' : event.actorRole || '—')}</td>
+        `;
+
+        tbody.appendChild(tr);
+      }
+    );
+}
+
+
 function render() {
   const tbody = document.querySelector('#materialsTable tbody');
   tbody.innerHTML = '';
@@ -988,31 +1550,36 @@ const sourceNote =
         '</div>'
       )
     : '';
-    
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${row.project || '—'}</td>
-      <td>${row.object || '—'}</td>
-      <td>${row.work || '—'}</td>
+      <td>${escapeControlHtml(row.project || '—')}</td>
+      <td>${escapeControlHtml(row.object || '—')}</td>
+      <td>${escapeControlHtml(row.work || '—')}</td>
       <td>
       ${escapeControlHtml(row.name)}
       ${sourceNote}
       </td>
-      <td>${row.responsible || '—'}</td>
-      <td>${row.need}</td>
-      <td>${row.unit}</td>
-      <td>${row.stock}</td>
-      <td>${row.reserved}</td>
-      <td>${free}</td>
-      <td>${row.confirmed}</td>
-      <td>${row.deliveryDate || '—'}</td>
-      <td>${row.leadDays}</td>
-      <td>${deficit}</td>
-      <td>${formatDate(needDate)}</td>
-      <td>${formatDate(orderDeadline)}</td>
-      <td><span class="badge ${risk.level}">${risk.text}</span></td>
-      <td>${risk.action}</td>
-      <td><button class="small-btn" onclick="deleteMaterial(${index})">Удалить</button></td>
+      <td>${escapeControlHtml(row.responsible || '—')}</td>
+      <td>${formatControlNumber(row.need)}</td>
+      <td>${escapeControlHtml(row.unit)}</td>
+      <td>${formatControlNumber(row.stock)}</td>
+      <td>${formatControlNumber(row.reserved)}</td>
+      <td>${formatControlNumber(free)}</td>
+      <td>${formatControlNumber(row.confirmed)}</td>
+      <td>${escapeControlHtml(row.deliveryDate || '—')}</td>
+      <td>${formatControlNumber(row.leadDays)}</td>
+      <td>${formatControlNumber(deficit)}</td>
+      <td>${escapeControlHtml(formatDate(needDate))}</td>
+      <td>${escapeControlHtml(formatDate(orderDeadline))}</td>
+      <td><span class="badge ${escapeControlHtml(risk.level)}">${escapeControlHtml(risk.text)}</span></td>
+      <td>${escapeControlHtml(risk.action)}</td>
+      <td>
+        <div class="material-row-actions">
+          <button type="button" class="small-btn" onclick="startMaterialEdit(${index})">Изменить</button>
+          <button type="button" class="small-btn material-archive-btn" onclick="deleteMaterial(${index})">Исключить</button>
+        </div>
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -1022,16 +1589,64 @@ const sourceNote =
   document.getElementById('okCount').textContent = ok;
 
   renderOperationalControlCenter();
+  renderMaterialArchive();
+  renderMaterialHistory();
 }
 
 function addMaterial() {
-  const project = document.getElementById('newProject').value.trim() || 'Без проекта';
-  const object = document.getElementById('newObject').value.trim() || 'Без объекта';
-  const work = document.getElementById('newWork').value.trim() || 'Без работы';
-  const name = document.getElementById('newName').value.trim();
-  const responsible = document.getElementById('newResponsible').value.trim() || 'Не назначен';
-  const need = Number(document.getElementById('newNeed').value);
-  const unit = document.getElementById('newUnit').value.trim() || 'шт';
+  const project =
+    document.getElementById(
+      'newProject'
+    ).value.trim() ||
+    'Без проекта';
+
+  const object =
+    document.getElementById(
+      'newObject'
+    ).value.trim() ||
+    'Без объекта';
+
+  const work =
+    document.getElementById(
+      'newWork'
+    ).value.trim() ||
+    'Без работы';
+
+  const name =
+    document.getElementById(
+      'newName'
+    ).value.trim();
+
+  const responsible =
+    document.getElementById(
+      'newResponsible'
+    ).value.trim() ||
+    'Не назначен';
+
+  const need =
+    Number(
+      document.getElementById(
+        'newNeed'
+      ).value
+    );
+
+  const unit =
+    document.getElementById(
+      'newUnit'
+    ).value.trim() ||
+    'шт';
+
+  const reasonInput =
+    document.getElementById(
+      'materialChangeReason'
+    );
+
+  const changeReason =
+    (
+      reasonInput
+        ? reasonInput.value
+        : ''
+    ).trim();
 
   if (!name || !need) {
     alert('Введите материал и нужное количество.');
@@ -1041,7 +1656,7 @@ function addMaterial() {
   const importSource =
   pendingMaterialCandidateImport;
 
-  materials.push({
+  const materialValues = {
     project,
     object,
     work,
@@ -1083,9 +1698,114 @@ sourceReviewStatus:
   importSource
     ? 'confirmed-by-engineer'
     : ''
-  });
+  };
 
-  if (importSource) {
+  let changedMaterial =
+    null;
+
+  let action =
+    'created';
+
+  if (editingMaterialId) {
+    const materialIndex =
+      materials.findIndex(
+        function (material) {
+          return (
+            material.id ===
+            editingMaterialId
+          );
+        }
+      );
+
+    if (materialIndex < 0) {
+      alert(
+        'Редактируемая позиция не найдена. Обновите страницу и повторите попытку.'
+      );
+
+      cancelMaterialEdit();
+      return;
+    }
+
+    const before =
+      cloneMaterialValue(
+        materials[materialIndex]
+      );
+
+    changedMaterial = {
+      ...materials[materialIndex],
+      ...materialValues,
+
+      sourceType:
+        materials[materialIndex]
+          .sourceType ||
+        'manual',
+
+      sourceDocument:
+        materials[materialIndex]
+          .sourceDocument ||
+        '',
+
+      sourcePage:
+        materials[materialIndex]
+          .sourcePage ||
+        null,
+
+      sourceReviewStatus:
+        materials[materialIndex]
+          .sourceReviewStatus ||
+        '',
+
+      revision:
+        Number(
+          materials[materialIndex]
+            .revision
+        ) + 1,
+
+      updatedAt:
+        new Date().toISOString()
+    };
+
+    materials[materialIndex] =
+      changedMaterial;
+
+    recordMaterialHistory(
+      'updated',
+      before,
+      changedMaterial,
+      changeReason ||
+        'Ручная корректировка материала'
+    );
+
+    action =
+      'updated';
+  } else {
+    changedMaterial =
+      normalizeMaterialRecord(
+        materialValues,
+        'active'
+      );
+
+    materials.push(
+      changedMaterial
+    );
+
+    recordMaterialHistory(
+      'created',
+      null,
+      changedMaterial,
+      changeReason ||
+        (
+          importSource
+            ? 'Подтверждено из документа инженером'
+            : 'Добавлено вручную'
+        )
+    );
+  }
+
+  if (
+    importSource &&
+    action === 'created'
+  ) {
   importSource.candidate.transferStatus =
     'transferred';
 
@@ -1100,45 +1820,512 @@ sourceReviewStatus:
   pendingMaterialCandidateImport =
     null;
 }
-  
- saveMaterials();
-clearAddForm();
-render();
-renderProjectDocuments();
+
+  const changedMaterialId =
+    changedMaterial.id;
+
+  saveMaterials();
+  clearAddForm();
+  finishMaterialEditMode();
+  restoreActiveMaterialContext();
+  render();
+  renderProjectDocuments();
+
+  notifyMaterialsChanged(
+    action,
+    [changedMaterialId]
+  );
 }
 
 function deleteMaterial(index) {
+  const material =
+    materials[index];
+
+  if (!material) {
+    return;
+  }
+
+  const confirmed =
+    confirm(
+      'Исключить материал из активного расчёта?\n\n' +
+      `${material.name} — ${material.need} ${material.unit}\n\n` +
+      'Запись и история сохранятся, материал можно будет восстановить.'
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const reason =
+    prompt(
+      'Укажите причину исключения:',
+      'Исключено пользователем'
+    );
+
+  if (reason === null) {
+    return;
+  }
+
+  const before =
+    cloneMaterialValue(
+      material
+    );
+
+  const archivedMaterial = {
+    ...material,
+    status: 'archived',
+    archiveReason:
+      reason.trim() ||
+      'Причина не указана',
+    archivedAt:
+      new Date().toISOString(),
+    updatedAt:
+      new Date().toISOString(),
+    revision:
+      Number(material.revision) + 1
+  };
+
   materials.splice(index, 1);
+
+  archivedMaterials.push(
+    archivedMaterial
+  );
+
+  recordMaterialHistory(
+    'archived',
+    before,
+    archivedMaterial,
+    archivedMaterial.archiveReason
+  );
+
+  if (
+    editingMaterialId ===
+    material.id
+  ) {
+    cancelMaterialEdit();
+  }
+
   saveMaterials();
   render();
+
+  notifyMaterialsChanged(
+    'archived',
+    [material.id]
+  );
+}
+
+
+function restoreArchivedMaterial(
+  materialId
+) {
+  const archiveIndex =
+    archivedMaterials.findIndex(
+      function (material) {
+        return (
+          material.id ===
+          materialId
+        );
+      }
+    );
+
+  if (archiveIndex < 0) {
+    return;
+  }
+
+  const archivedMaterial =
+    archivedMaterials[
+      archiveIndex
+    ];
+
+  const confirmed =
+    confirm(
+      'Восстановить материал в активный расчёт?\n\n' +
+      `${archivedMaterial.name} — ${archivedMaterial.need} ${archivedMaterial.unit}`
+    );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const before =
+    cloneMaterialValue(
+      archivedMaterial
+    );
+
+  const restoredMaterial = {
+    ...archivedMaterial,
+    status: 'active',
+    archiveReason: '',
+    archivedAt: null,
+    restoredAt:
+      new Date().toISOString(),
+    updatedAt:
+      new Date().toISOString(),
+    revision:
+      Number(
+        archivedMaterial.revision
+      ) + 1
+  };
+
+  archivedMaterials.splice(
+    archiveIndex,
+    1
+  );
+
+  materials.push(
+    restoredMaterial
+  );
+
+  recordMaterialHistory(
+    'restored',
+    before,
+    restoredMaterial,
+    'Восстановлено пользователем'
+  );
+
+  saveMaterials();
+  render();
+
+  notifyMaterialsChanged(
+    'restored',
+    [materialId]
+  );
+}
+
+
+function setMaterialInputValue(
+  elementId,
+  value
+) {
+  const element =
+    document.getElementById(
+      elementId
+    );
+
+  if (element) {
+    element.value =
+      value === null ||
+      value === undefined
+        ? ''
+        : String(value);
+  }
+}
+
+
+function startMaterialEdit(index) {
+  const material =
+    materials[index];
+
+  if (!material) {
+    return;
+  }
+
+  pendingMaterialCandidateImport =
+    null;
+
+  editingMaterialId =
+    material.id;
+
+  setMaterialInputValue(
+    'newProject',
+    material.project
+  );
+
+  setMaterialInputValue(
+    'newObject',
+    material.object
+  );
+
+  setMaterialInputValue(
+    'newWork',
+    material.work
+  );
+
+  setMaterialInputValue(
+    'newName',
+    material.name
+  );
+
+  setMaterialInputValue(
+    'newResponsible',
+    material.responsible
+  );
+
+  setMaterialInputValue(
+    'newNeed',
+    material.need
+  );
+
+  setMaterialInputValue(
+    'newUnit',
+    material.unit
+  );
+
+  setMaterialInputValue(
+    'newStock',
+    material.stock
+  );
+
+  setMaterialInputValue(
+    'newReserved',
+    material.reserved
+  );
+
+  setMaterialInputValue(
+    'newConfirmed',
+    material.confirmed
+  );
+
+  setMaterialInputValue(
+    'newDelivery',
+    material.deliveryDate
+  );
+
+  setMaterialInputValue(
+    'newLead',
+    material.leadDays
+  );
+
+  setMaterialInputValue(
+    'materialChangeReason',
+    ''
+  );
+
+  const title =
+    document.getElementById(
+      'materialFormTitle'
+    );
+
+  const addButton =
+    document.getElementById(
+      'addBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'cancelMaterialEditBtn'
+    );
+
+  const message =
+    document.getElementById(
+      'materialFormMessage'
+    );
+
+  if (title) {
+    title.textContent =
+      'Изменить материал';
+  }
+
+  if (addButton) {
+    addButton.textContent =
+      'Сохранить изменения';
+  }
+
+  if (cancelButton) {
+    cancelButton.classList.remove(
+      'hidden'
+    );
+  }
+
+  if (message) {
+    message.textContent =
+      'Изменения будут сохранены новой редакцией. Предыдущее значение останется в истории.';
+  }
+
+  if (
+    title &&
+    typeof title.scrollIntoView ===
+      'function'
+  ) {
+    title.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  }
+}
+
+
+function finishMaterialEditMode() {
+  editingMaterialId = '';
+
+  const title =
+    document.getElementById(
+      'materialFormTitle'
+    );
+
+  const addButton =
+    document.getElementById(
+      'addBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'cancelMaterialEditBtn'
+    );
+
+  const message =
+    document.getElementById(
+      'materialFormMessage'
+    );
+
+  if (title) {
+    title.textContent =
+      'Добавить материал';
+  }
+
+  if (addButton) {
+    addButton.textContent =
+      'Добавить и пересчитать';
+  }
+
+  if (cancelButton) {
+    cancelButton.classList.add(
+      'hidden'
+    );
+  }
+
+  if (message) {
+    message.textContent =
+      'Новая позиция получит постоянный ID. Все дальнейшие изменения будут сохранены в истории.';
+  }
+}
+
+
+function restoreActiveMaterialContext() {
+  if (
+    !window.BuildMindWorkContexts ||
+    typeof window.BuildMindWorkContexts
+      .getActive !== 'function'
+  ) {
+    return;
+  }
+
+  const context =
+    window.BuildMindWorkContexts
+      .getActive();
+
+  if (!context) {
+    return;
+  }
+
+  setMaterialInputValue(
+    'newProject',
+    context.project
+  );
+
+  setMaterialInputValue(
+    'newObject',
+    context.object
+  );
+
+  setMaterialInputValue(
+    'newWork',
+    context.work
+  );
+}
+
+
+function cancelMaterialEdit() {
+  pendingMaterialCandidateImport =
+    null;
+
+  clearAddForm();
+  finishMaterialEditMode();
+  restoreActiveMaterialContext();
 }
 
 function clearAddForm() {
   document.getElementById('newName').value = '';
   document.getElementById('newResponsible').value = '';
   document.getElementById('newNeed').value = '';
-  document.getElementById('newUnit').value = '';
+  document.getElementById('newUnit').value = 'шт';
   document.getElementById('newStock').value = '0';
   document.getElementById('newReserved').value = '0';
   document.getElementById('newConfirmed').value = '0';
   document.getElementById('newDelivery').value = '';
   document.getElementById('newLead').value = '1';
+
+  const reasonInput =
+    document.getElementById(
+      'materialChangeReason'
+    );
+
+  if (reasonInput) {
+    reasonInput.value = '';
+  }
 }
 
 function resetMaterials() {
   const confirmed = confirm(
-    'Очистить все материалы? ' +
-    'Добавленные позиции будут удалены.'
+    'Исключить все активные материалы?\n\n' +
+    'Записи не будут уничтожены: они перейдут в архив и останутся в истории.'
   );
 
   if (!confirmed) {
     return;
   }
 
+  const reason =
+    prompt(
+      'Укажите причину массового исключения:',
+      'Массовое исключение пользователем'
+    );
+
+  if (reason === null) {
+    return;
+  }
+
+  const now =
+    new Date().toISOString();
+
+  const archivedIds = [];
+
+  materials.forEach(
+    function (material) {
+      const before =
+        cloneMaterialValue(
+          material
+        );
+
+      const archivedMaterial = {
+        ...material,
+        status: 'archived',
+        archiveReason:
+          reason.trim() ||
+          'Причина не указана',
+        archivedAt: now,
+        updatedAt: now,
+        revision:
+          Number(material.revision) + 1
+      };
+
+      archivedMaterials.push(
+        archivedMaterial
+      );
+
+      archivedIds.push(
+        material.id
+      );
+
+      recordMaterialHistory(
+        'archived',
+        before,
+        archivedMaterial,
+        archivedMaterial.archiveReason
+      );
+    }
+  );
+
   materials = [];
 
   saveMaterials();
+  cancelMaterialEdit();
   render();
+
+  notifyMaterialsChanged(
+    'archived-batch',
+    archivedIds
+  );
 }
 
 
@@ -1147,7 +2334,8 @@ function startCleanProject() {
     'Начать новый чистый проект?\n\n' +
     'Будут очищены материалы, контексты работ, ' +
     'структура проекта, реестр редакций, ' +
-    'решения по кандидатам и текущий список документов.'
+    'решения по кандидатам, архив и история ' +
+    'текущего проекта, а также текущий список документов.'
   );
 
   if (!confirmed) {
@@ -1156,6 +2344,14 @@ function startCleanProject() {
 
   localStorage.removeItem(
     STORAGE_KEY
+  );
+
+  localStorage.removeItem(
+    MATERIAL_ARCHIVE_STORAGE_KEY
+  );
+
+  localStorage.removeItem(
+    MATERIAL_HISTORY_STORAGE_KEY
   );
 
   localStorage.removeItem(
@@ -1188,7 +2384,9 @@ function exportJson() {
     work: document.getElementById('workName').value,
     workStartDate: document.getElementById('workStartDate').value,
     safetyDays: Number(document.getElementById('safetyDays').value || 0),
-    materials
+    materials,
+    archivedMaterials,
+    materialHistory
   };
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -1204,6 +2402,13 @@ document.getElementById('recalcBtn').addEventListener('click', render);
 document.getElementById('addBtn').addEventListener('click', addMaterial);
 document.getElementById('exportBtn').addEventListener('click', exportJson);
 document.getElementById('resetBtn').addEventListener('click', resetMaterials);
+
+document.getElementById(
+  'cancelMaterialEditBtn'
+).addEventListener(
+  'click',
+  cancelMaterialEdit
+);
 
 document.getElementById(
   'newCleanProjectBtn'
@@ -1551,6 +2756,10 @@ function prepareMaterialCandidateImport(
   documentItem,
   candidate
 ) {
+  if (editingMaterialId) {
+    cancelMaterialEdit();
+  }
+
   const projectInput =
     document.getElementById(
       'newProject'
@@ -2920,7 +4129,7 @@ const PROJECT_DOCUMENT_RULES = [
 },
   {
     id: 'working-documents',
-    label: 'Комплект рабочей документации',
+    label: 'Проектная / рабочая документация',
     keywords: [
       ['рабочая документация', 7],
       ['рабочий проект', 5],
@@ -3008,6 +4217,18 @@ function classifyProjectDocument(
       })
       .join(' ');
 
+  const coverText =
+    normalizedPages
+      .filter(function (pageItem) {
+        return (
+          Number(pageItem.pageNumber) <= 3
+        );
+      })
+      .map(function (pageItem) {
+        return pageItem.text;
+      })
+      .join(' ');
+
   if (!fullText) {
     return {
       id: 'unknown',
@@ -3016,6 +4237,41 @@ function classifyProjectDocument(
       confidence: 'Нет данных',
       matchedKeywords: [],
       sourcePages: []
+    };
+  }
+
+  const projectCoverPattern =
+    /(?:проектн[а-яё]*|рабоч[а-яё]*)\s+документац[а-яё]*|рабоч[а-яё]*\s+проект[а-яё]*|пояснительн[а-яё]*\s+записк[а-яё]*/;
+
+  const projectCoverMatch =
+    coverText.match(
+      projectCoverPattern
+    );
+
+  if (projectCoverMatch) {
+    const sourcePages =
+      normalizedPages
+        .filter(function (pageItem) {
+          return (
+            Number(pageItem.pageNumber) <= 3 &&
+            projectCoverPattern.test(
+              pageItem.text
+            )
+          );
+        })
+        .map(function (pageItem) {
+          return pageItem.pageNumber;
+        });
+
+    return {
+      id: 'working-documents',
+      label:
+        'Проектная / рабочая документация',
+      confidence: 'Высокая',
+      matchedKeywords: [
+        projectCoverMatch[0]
+      ],
+      sourcePages
     };
   }
 
@@ -3209,6 +4465,117 @@ function normalizeMaterialCandidateUnit(
   return units[normalized] || normalized;
 }
 
+function isLikelyMaterialCandidatePage(
+  value
+) {
+  const text =
+    normalizeProjectDocumentText(
+      value
+    );
+
+  const strongMarkers = [
+    /спецификац[а-яё]*(?:\s+[а-яё]+){0,5}\s+(?:оборудован|материал|издел)/,
+    /наименовани[а-яё]*\s+и\s+техническ[а-яё]*\s+характеристик/,
+    /наименовани[а-яё]*\s+вида?\s+работ[а-яё]*\s+и\s+материал/
+  ];
+
+  if (
+    strongMarkers.some(function (pattern) {
+      return pattern.test(text);
+    })
+  ) {
+    return true;
+  }
+
+  const tableMarkers = [
+    /(^|\s)поз\.?($|\s)/,
+    /ед\.?\s*изм\.*/,
+    /(^|\s)кол(?:\.|ичество)($|\s)/,
+    /поставщик/,
+    /примечани[а-яё]*/,
+    /масса\s+(?:единиц|1\s*ед)/
+  ];
+
+  const markerCount =
+    tableMarkers.reduce(
+      function (count, pattern) {
+        return (
+          count +
+          (pattern.test(text) ? 1 : 0)
+        );
+      },
+      0
+    );
+
+  return markerCount >= 3;
+}
+
+function isLikelyMaterialCandidateName(
+  value
+) {
+  const original =
+    String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const text =
+    normalizeProjectDocumentText(
+      original
+    );
+
+  if (
+    !text ||
+    text.split(' ').length > 18
+  ) {
+    return false;
+  }
+
+  const noisePatterns = [
+    /(^|\s)(?:площадью|площадь|длиной|длина|высотой|высота|отм\.?|отметка)(?:\s|$)/,
+    /для\s+\d+\s+секци/,
+    /h\s*\(\s*max\s*\)/,
+    /общие\s+технические\s+условия/,
+    /(^|\s)(?:гост|сп|снип|ту)\s*\d/,
+    /(?:поз\.?|позиция)\s+наименовани/,
+    /наименовани[а-яё]*\s+ед\.?\s*изм/,
+    /(?:ед\.?\s*изм|количество|примечание|страница|лист)\s*$/,
+    /(?:разработал|проверил|согласовано|инв\.?\s*№|подп\.?\s*и\s*дата)/
+  ];
+
+  if (
+    noisePatterns.some(function (pattern) {
+      return pattern.test(text);
+    })
+  ) {
+    return false;
+  }
+
+  const workPatterns = [
+    /^(?:монтаж|демонтаж|прокладка|установка|разработка|обратная\s+засыпка|восстановление|разборка|пусконаладоч|пнр)(?:\s|$)/,
+    /^устройство\s+(?:фундамент|кабельн[а-яё]*\s+канализац|дорожн|покрыт|колодц|опор|светофорн[а-яё]*\s+объект)/
+  ];
+
+  if (
+    workPatterns.some(function (pattern) {
+      return pattern.test(text);
+    })
+  ) {
+    return false;
+  }
+
+  const materialSignal =
+    /кабел|провод|труб|шкаф|коммутатор|светофор|контроллер|детектор|видеокамер|камер|опор|фундамент|бетон|песок|грунт|щебен|колод|муфт|клемм|автомат|выключател|разъем|короб|модул|блок|креплен|стойк|лоток|панел|трансформатор|счетчик|датчик|радиолокатор|приемник|передатчик|сервер|маршрутизатор|усилител|аккумулятор|розетк|термостат|нагревател|вентилятор|кондиционер|капсул|шпильк|анкер|болт|гайк|шайб|заземл|электрод|светильник|ламп|цемент|раствор|кирпич|сетк|арматур|сталь|гипс|утеплител|изоляц|краск|грунтовк|двер|окн|профил|кронштейн|цоколь/.test(
+      text
+    );
+
+  const modelSignal =
+    /[A-ZА-ЯЁ]{2,}[A-ZА-ЯЁ0-9./+\-]*\d|[A-ZА-ЯЁ]{3,}/.test(
+      original
+    );
+
+  return materialSignal || modelSignal;
+}
+
 function extractMaterialCandidates(
   extractedPages
 ) {
@@ -3219,23 +4586,45 @@ function extractMaterialCandidates(
 
   const candidates = [];
 
-  const materialPattern =
-    /([А-ЯA-ZЁ][А-Яа-яA-Za-zЁё0-9«»"'()\/.,+\-–—×xХ\s]{2,120}?)\s+(\d+(?:[.,]\d+)?)\s*(шт\.?|штук|п\.?\s*м\.?|м²|м2|м³|м3|м|кг|т|л|компл\.?|комплект|упак\.?|упаковка|рулон)(?=\s|$|[.,;:)])/giu;
+  const tableRowPattern =
+    /^[ \t]*(?:\d+(?:\.\d+)*[ \t]+)?([А-ЯA-ZЁ][А-Яа-яA-Za-zЁё0-9«»"'№%()\/.,:+\-–—×xХ \t]{2,160}?)[ \t]+(шт\.?|штук|п\.?[ \t]*м\.?|м²|м2|м³|м3|м|кг|т|л|компл\.?|комплект|упак\.?|упаковка|рул\.?|рулон)[ \t]+(\d+(?:[.,]\d+)?)(?=[ \t]|$|[.,;:)])/iu;
 
   pages.forEach(function (pageItem) {
     const pageText =
       String(pageItem.text || '');
 
-    let match = null;
-
-    while (
-      (
-        match =
-          materialPattern.exec(
-            pageText
-          )
-      ) !== null
+    if (
+      !isLikelyMaterialCandidatePage(
+        pageText
+      )
     ) {
+      return;
+    }
+
+    const lines =
+      pageText
+        .split(/\r?\n/)
+        .map(function (line) {
+          return line.trim();
+        })
+        .filter(Boolean);
+
+    lines.forEach(function (line) {
+      if (
+        candidates.length >= 100
+      ) {
+        return;
+      }
+
+      const match =
+        line.match(
+          tableRowPattern
+        );
+
+      if (!match) {
+        return;
+      }
+
       const name =
         normalizeMaterialCandidateName(
           match[1]
@@ -3243,22 +4632,25 @@ function extractMaterialCandidates(
 
       const quantity =
         Number(
-          String(match[2])
+          String(match[3])
             .replace(',', '.')
         );
 
       const unit =
         normalizeMaterialCandidateUnit(
-          match[3]
+          match[2]
         );
 
       if (
         !name ||
         name.length < 3 ||
+        !isLikelyMaterialCandidateName(
+          name
+        ) ||
         !Number.isFinite(quantity) ||
         quantity <= 0
       ) {
-        continue;
+        return;
       }
 
       const duplicate =
@@ -3296,13 +4688,34 @@ reviewStatus:
         });
       }
 
-      if (candidates.length >= 100) {
-        return;
-      }
-    }
+      return;
+    });
   });
 
   return candidates;
+}
+
+function extractProjectDocumentPageText(
+  items
+) {
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  )
+    .map(function (item) {
+      const value =
+        String(item?.str || '');
+
+      return (
+        value +
+        (item?.hasEOL ? '\n' : ' ')
+      );
+    })
+    .join('')
+    .replace(/[^\S\r\n]+/g, ' ')
+    .replace(/ *\n+ */g, '\n')
+    .trim();
 }
 
 async function inspectPdfDocument(
@@ -3340,13 +4753,9 @@ const extractedPages = [];
         await page.getTextContent();
 
       const extractedText =
-        textContent.items
-          .map(function (item) {
-            return item.str || '';
-          })
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        extractProjectDocumentPageText(
+          textContent.items
+        );
 
       const meaningfulTextLength =
         extractedText.replace(

@@ -573,6 +573,16 @@ const projectIntake =
       'materialManagementSection'
     );
 
+  const materialArchive =
+    getWorkspaceElement(
+      'materialArchiveSection'
+    );
+
+  const materialHistory =
+    getWorkspaceElement(
+      'materialHistorySection'
+    );
+
   const contextLayout =
     document.querySelector(
       '.context-layout'
@@ -731,6 +741,11 @@ moveWorkspaceNode(
     views.materials
   );
 
+  moveWorkspaceNode(
+    materialArchive,
+    views.materials
+  );
+
 
   /*
     ==================================================
@@ -775,15 +790,22 @@ moveWorkspaceNode(
     )
   );
 
-  views.history.appendChild(
-    createWorkspacePlaceholder(
-      'Хронология будет формироваться автоматически',
-
-      'История будет сохранять редакцию 1 → редакцию 2 → редакцию 3, ' +
-      'пакеты изменений, утверждения и изменения ' +
-      'без удаления прошлого.'
-    )
+  moveWorkspaceNode(
+    materialHistory,
+    views.history
   );
+
+  if (!materialHistory) {
+    views.history.appendChild(
+      createWorkspacePlaceholder(
+        'Хронология будет формироваться автоматически',
+
+        'История будет сохранять редакцию 1 → редакцию 2 → редакцию 3, ' +
+        'пакеты изменений, утверждения и изменения ' +
+        'без удаления прошлого.'
+      )
+    );
+  }
 
 
   /*
