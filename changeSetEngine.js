@@ -122,7 +122,14 @@ function loadChangeSetState() {
         BUILDMIND_CHANGE_SET_VERSION,
       changeSets:
         Array.isArray(parsed.changeSets)
-          ? parsed.changeSets
+          ? parsed.changeSets.filter(
+              function (item) {
+                return (
+                  item?.sourceType !==
+                  'demo'
+                );
+              }
+            )
           : []
     };
   } catch (error) {
@@ -138,6 +145,9 @@ function loadChangeSetState() {
 
 let changeSetState =
   loadChangeSetState();
+
+let demoChangeSetPreview =
+  null;
 
 
 function saveChangeSetState() {
@@ -994,16 +1004,21 @@ function compareChangeSetSnapshots(
 
 
 function createStoredChangeSet(options) {
+  const shouldPersist =
+    options.persist !== false;
+
   const duplicate =
-    changeSetState.changeSets.find(
-      function (item) {
-        return (
-          options.newRevisionId &&
-          item.newRevisionId ===
-            options.newRevisionId
-        );
-      }
-    );
+    shouldPersist
+      ? changeSetState.changeSets.find(
+          function (item) {
+            return (
+              options.newRevisionId &&
+              item.newRevisionId ===
+                options.newRevisionId
+            );
+          }
+        )
+      : null;
 
   if (duplicate) {
     return duplicate;
@@ -1123,6 +1138,10 @@ function createStoredChangeSet(options) {
     requiresEngineerConfirmation:
       true
   };
+
+  if (!shouldPersist) {
+    return changeSet;
+  }
 
   changeSetState.changeSets.unshift(
     changeSet
@@ -1452,6 +1471,7 @@ function renderChangeSetCard(changeSet) {
       : '';
 
   const actions =
+    changeSet.sourceType !== 'demo' &&
     ['pending', 'needs-review']
       .includes(changeSet.status)
       ? `
@@ -1539,8 +1559,17 @@ function renderChangeSetCard(changeSet) {
       ${actions}
 
       <p class="change-set-disclaimer">
-        Предварительный анализ. Применение к утверждённым объёмам,
-        ГПР и закупкам требует решения инженера.
+        ${
+          changeSet.sourceType === 'demo'
+            ? (
+                'Это временный пример. Он не сохраняется ' +
+                'и не входит в данные живого проекта.'
+              )
+            : (
+                'Предварительный анализ. Применение к утверждённым объёмам, ' +
+                'ГПР и закупкам требует решения инженера.'
+              )
+        }
       </p>
     </article>
   `;
@@ -1591,6 +1620,7 @@ function createChangeSetUi() {
         type="button"
         id="createChangeSetDemoBtn"
         class="secondary"
+        aria-pressed="false"
       >
         Показать пример сравнения
       </button>
@@ -1616,7 +1646,13 @@ function createChangeSetUi() {
   )?.addEventListener(
     'click',
     function () {
-      createDemoChangeSet();
+      if (demoChangeSetPreview) {
+        demoChangeSetPreview =
+          null;
+      } else {
+        createDemoChangeSet();
+      }
+
       renderChangeSetUi();
     }
   );
@@ -1691,14 +1727,41 @@ function renderChangeSetUi() {
     return;
   }
 
-  const sets =
+  const liveSets =
     changeSetState.changeSets;
+
+  const sets =
+    demoChangeSetPreview
+      ? [
+          demoChangeSetPreview,
+          ...liveSets
+        ]
+      : liveSets;
+
+  const demoButton =
+    document.getElementById(
+      'createChangeSetDemoBtn'
+    );
+
+  if (demoButton) {
+    demoButton.textContent =
+      demoChangeSetPreview
+        ? 'Закрыть пример'
+        : 'Показать пример сравнения';
+
+    demoButton.setAttribute(
+      'aria-pressed',
+      demoChangeSetPreview
+        ? 'true'
+        : 'false'
+    );
+  }
 
   const counters = {
     changeSetTotalCount:
-      sets.length,
+      liveSets.length,
     changeSetPendingCount:
-      sets.filter(
+      liveSets.filter(
         function (item) {
           return [
             'pending',
@@ -1708,7 +1771,7 @@ function renderChangeSetUi() {
         }
       ).length,
     changeSetChangesCount:
-      sets.reduce(
+      liveSets.reduce(
         function (total, item) {
           return total +
             Number(
@@ -1737,8 +1800,8 @@ function renderChangeSetUi() {
     list.innerHTML = `
       <div class="change-set-empty">
         Пакетов изменений пока нет. Зарегистрируйте исходную редакцию,
-        сделайте её действующей, затем зарегистрируйте новую редакцию —
-        либо откройте демонстрационный пример.
+        сделайте её действующей, затем зарегистрируйте новую редакцию.
+        Демонстрационный пример открывается отдельно и не сохраняется.
       </div>
     `;
     return;
@@ -1834,16 +1897,8 @@ function demoChangeSetSnapshot(
 
 
 function createDemoChangeSet() {
-  const existing =
-    changeSetState.changeSets.find(
-      function (item) {
-        return item.sourceType ===
-          'demo';
-      }
-    );
-
-  if (existing) {
-    return existing;
+  if (demoChangeSetPreview) {
+    return demoChangeSetPreview;
   }
 
   const before =
@@ -1921,9 +1976,12 @@ function createDemoChangeSet() {
       ]
     );
 
-  return createStoredChangeSet({
+  demoChangeSetPreview =
+    createStoredChangeSet({
     id:
       'change-set-demo-cable-duct-v1',
+    persist:
+      false,
     sourceType:
       'demo',
     documentId:
@@ -1949,6 +2007,8 @@ function createDemoChangeSet() {
     afterSnapshot:
       after
   });
+
+  return demoChangeSetPreview;
 }
 
 
@@ -1981,6 +2041,21 @@ window.BuildMindChangeSet = {
 
   createDemo:
     createDemoChangeSet,
+
+  getDemoPreview:
+    function () {
+      return cloneChangeSetValue(
+        demoChangeSetPreview
+      );
+    },
+
+  closeDemo:
+    function () {
+      demoChangeSetPreview =
+        null;
+
+      renderChangeSetUi();
+    },
 
   setDecision:
     setChangeSetDecision,
