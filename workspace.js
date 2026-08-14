@@ -27,11 +27,6 @@ const BUILDMIND_WORKSPACE_VIEWS = [
   },
 
   {
-    id: 'review',
-    label: 'Проверка'
-  },
-
-  {
     id: 'works',
     label: 'Работы и ГПР'
   },
@@ -326,14 +321,6 @@ function createDashboardProjectCard() {
       <button
         type="button"
         class="secondary-btn"
-        data-workspace-open="review"
-      >
-        Центр проверки
-      </button>
-
-      <button
-        type="button"
-        class="secondary-btn"
         data-workspace-open="materials"
       >
         Материалы
@@ -411,51 +398,6 @@ function createDashboardOverview() {
         </div>
 
       </dl>
-
-    </article>
-
-
-    <article class="card workspace-mini-card">
-
-      <div class="workspace-mini-card-head">
-        <div>
-          <span class="workspace-mini-label">
-            ПРОВЕРКА ИНЖЕНЕРОМ
-          </span>
-
-          <h3>
-            Очередь решений
-          </h3>
-        </div>
-
-        <button
-          type="button"
-          class="workspace-link-button"
-          data-workspace-open="review"
-        >
-          Открыть
-        </button>
-      </div>
-
-
-      <div class="workspace-mini-stats">
-
-        <div>
-          <strong id="workspaceReviewPending">0</strong>
-          <span>Ожидают</span>
-        </div>
-
-        <div>
-          <strong id="workspaceReviewClarification">0</strong>
-          <span>Уточнить</span>
-        </div>
-
-        <div>
-          <strong id="workspaceReviewConfirmed">0</strong>
-          <span>Подтверждено</span>
-        </div>
-
-      </div>
 
     </article>
 
@@ -621,11 +563,6 @@ const projectIntake =
       'changeSetSection'
     );
 
-  const reviewCenter =
-    getWorkspaceElement(
-      'reviewCenterSection'
-    );
-
   const assistant =
     document.querySelector(
       '.assistant-card'
@@ -751,38 +688,6 @@ moveWorkspaceNode(
     documentRegistry,
     views.documents
   );
-
-
-  /*
-    ==================================================
-    ЦЕНТР ПРОВЕРКИ
-    ==================================================
-  */
-
-  views.review.appendChild(
-    createWorkspacePageHeader(
-      'Центр проверки',
-
-      'Единая очередь выводов автоматического анализа. ' +
-      'Только подтверждённые инженером данные формируют модель проекта.'
-    )
-  );
-
-  moveWorkspaceNode(
-    reviewCenter,
-    views.review
-  );
-
-  if (!reviewCenter) {
-    views.review.appendChild(
-      createWorkspacePlaceholder(
-        'Очередь проверки пока пуста',
-
-        'После анализа документов здесь появятся работы, ' +
-        'материалы, сроки и пакеты изменений.'
-      )
-    );
-  }
 
 
   /*
@@ -1143,43 +1048,6 @@ function updateWorkspaceDashboard() {
   }
 
 
-  const reviewPending =
-    getWorkspaceElement(
-      'workspaceReviewPending'
-    );
-
-  const reviewClarification =
-    getWorkspaceElement(
-      'workspaceReviewClarification'
-    );
-
-  const reviewConfirmed =
-    getWorkspaceElement(
-      'workspaceReviewConfirmed'
-    );
-
-  if (reviewPending) {
-    reviewPending.textContent =
-      getWorkspaceText(
-        'reviewCenterPendingCount'
-      );
-  }
-
-  if (reviewClarification) {
-    reviewClarification.textContent =
-      getWorkspaceText(
-        'reviewCenterClarificationCount'
-      );
-  }
-
-  if (reviewConfirmed) {
-    reviewConfirmed.textContent =
-      getWorkspaceText(
-        'reviewCenterConfirmedCount'
-      );
-  }
-
-
   const materialCritical =
     getWorkspaceElement(
       'workspaceMaterialsCritical'
@@ -1371,10 +1239,6 @@ function initializeWorkspaceObservers() {
     'documentRegistryCurrentCount',
     'documentRegistryReviewCount',
 
-    'reviewCenterPendingCount',
-    'reviewCenterClarificationCount',
-    'reviewCenterConfirmedCount',
-
     'currentProject',
     'currentObject',
     'currentWork',
@@ -1425,12 +1289,6 @@ function initializeWorkspaceObservers() {
 
   window.addEventListener(
     'buildmind:document-registry-changed',
-    updateWorkspaceDashboard
-  );
-
-
-  window.addEventListener(
-    'buildmind:review-center-changed',
     updateWorkspaceDashboard
   );
 }
