@@ -681,6 +681,93 @@ function saveRootProjectFromUi() {
 }
 
 
+function upsertRootProject(
+  project
+) {
+  const source =
+    project &&
+    typeof project === 'object'
+      ? project
+      : {};
+
+  const name =
+    String(source.name || '').trim();
+
+  const object =
+    String(source.object || '').trim();
+
+  if (
+    !name ||
+    !object
+  ) {
+    return null;
+  }
+
+  const now =
+    new Date().toISOString();
+
+  if (!projectCoreState.rootProject) {
+    projectCoreState.rootProject = {
+      id:
+        source.id ||
+        projectCoreId('project'),
+      parentProjectId: null,
+      nodeType: 'root',
+      name,
+      object,
+      code:
+        String(source.code || '').trim(),
+      contractNumber:
+        String(
+          source.contractNumber ||
+          ''
+        ).trim(),
+      status:
+        source.status === 'closed'
+          ? 'closed'
+          : 'active',
+      createdAt:
+        source.createdAt || now,
+      updatedAt: now
+    };
+
+    projectCoreState.activeNodeId =
+      projectCoreState.rootProject.id;
+  } else {
+    projectCoreState.rootProject = {
+      ...projectCoreState.rootProject,
+      name,
+      object,
+      code:
+        source.code !== undefined
+          ? String(source.code || '').trim()
+          : projectCoreState.rootProject.code,
+      contractNumber:
+        source.contractNumber !== undefined
+          ? String(
+              source.contractNumber ||
+              ''
+            ).trim()
+          : projectCoreState.rootProject
+              .contractNumber,
+      status:
+        source.status === 'closed'
+          ? 'closed'
+          : projectCoreState.rootProject.status,
+      updatedAt: now
+    };
+  }
+
+  saveProjectCoreState();
+  syncProjectCoreInputs();
+  renderProjectCore();
+
+  return cloneProjectCore(
+    projectCoreState.rootProject
+  );
+}
+
+
 function addLinkedProjectFromUi() {
   const root =
     projectCoreState
@@ -1006,6 +1093,9 @@ window.BuildMindProjectCore = {
 
   selectNode:
     selectProjectCoreNode,
+
+  upsertRoot:
+    upsertRootProject,
 
   refresh:
     renderProjectCore
