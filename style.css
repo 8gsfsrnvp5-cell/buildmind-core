@@ -3146,3 +3146,245 @@ html[dir="rtl"] .project-intake-review-item blockquote {
     );
   }
 }
+
+/* ==================================================
+   CHANGESET V1
+   ================================================== */
+
+.change-set-section-header,
+.change-set-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.change-set-section-header .secondary {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.change-set-eyebrow {
+  display: inline-block;
+  margin-bottom: 7px;
+  color: #3152a4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.change-set-overview,
+.change-set-summary {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(120px, 1fr)
+  );
+  gap: 10px;
+}
+
+.change-set-overview {
+  margin: 16px 0;
+}
+
+.change-set-overview div,
+.change-set-summary div {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.change-set-overview strong,
+.change-set-summary strong {
+  display: block;
+  font-size: 22px;
+}
+
+.change-set-overview span,
+.change-set-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.change-set-message {
+  margin: 12px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.change-set-list {
+  display: grid;
+  gap: 16px;
+}
+
+.change-set-card-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.change-set-card-header h3 {
+  margin: 0 0 6px;
+}
+
+.change-set-card-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.change-set-status,
+.change-set-type-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.change-set-status-pending,
+.change-set-status-needs-review,
+.change-set-status-needs-baseline {
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+.change-set-status-confirmed {
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.change-set-summary {
+  margin: 14px 0;
+}
+
+.change-set-group {
+  margin-top: 16px;
+}
+
+.change-set-group h4 {
+  margin: 0 0 10px;
+}
+
+.change-set-changes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.change-set-change {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #ffffff;
+}
+
+.change-set-added {
+  border-left-color: #2e8b57;
+}
+
+.change-set-modified {
+  border-left-color: #d69e2e;
+}
+
+.change-set-removed {
+  border-left-color: #c23b3b;
+}
+
+.change-set-added .change-set-type-badge {
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.change-set-modified .change-set-type-badge {
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+.change-set-removed .change-set-type-badge {
+  background: var(--critical);
+  color: var(--critical-text);
+}
+
+.change-set-change-main {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.change-set-fields {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  color: #344054;
+  font-size: 13px;
+}
+
+.change-set-warnings {
+  margin: 14px 0;
+  border: 1px solid #f0d38a;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fffaf0;
+  color: #6f4b00;
+  font-size: 13px;
+}
+
+.change-set-warnings ul {
+  margin: 7px 0 0;
+  padding-left: 20px;
+}
+
+.change-set-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.change-set-actions .primary,
+.change-set-actions .secondary {
+  margin: 0;
+}
+
+.change-set-decision {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #f3f7ff;
+  color: #27437d;
+  font-size: 13px;
+}
+
+.change-set-disclaimer {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.change-set-empty {
+  border: 1px dashed var(--border);
+  border-radius: 11px;
+  padding: 16px;
+  color: var(--muted);
+  background: #f8fafc;
+}
+
+@media (max-width: 760px) {
+  .change-set-section-header,
+  .change-set-card-header {
+    flex-direction: column;
+  }
+
+  .change-set-section-header .secondary {
+    width: 100%;
+  }
+}
