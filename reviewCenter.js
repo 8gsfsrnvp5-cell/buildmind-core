@@ -33,6 +33,7 @@ const REVIEW_ENTITY_LABELS = {
   work: 'Работа',
   material: 'Материал',
   schedule: 'Сроки ГПР',
+  control: 'Контроль комплектности',
   'change-set': 'Пакет изменений'
 };
 
@@ -72,11 +73,12 @@ function cloneReviewCenterValue(value) {
 
 function emptyConfirmedProjectModel() {
   return {
-    version: 'confirmed-project-model-v1',
+    version: 'confirmed-project-model-v1.1',
     project: null,
     documents: [],
     works: [],
     materials: [],
+    controls: [],
     appliedChangeSetIds: [],
     revision: 0,
     createdAt: '',
@@ -195,6 +197,10 @@ function loadReviewCenterState() {
         materials:
           Array.isArray(parsed.model?.materials)
             ? parsed.model.materials
+            : [],
+        controls:
+          Array.isArray(parsed.model?.controls)
+            ? parsed.model.controls
             : [],
         appliedChangeSetIds:
           Array.isArray(
@@ -751,6 +757,29 @@ function syncReviewCenterSources() {
 }
 
 
+function enqueueExternalReviewItems(inputs) {
+  const items = Array.isArray(inputs)
+    ? inputs
+    : [inputs];
+
+  const queued = items
+    .filter(
+      function (item) {
+        return item &&
+          typeof item === 'object';
+      }
+    )
+    .map(queueReviewItem);
+
+  if (queued.length > 0) {
+    saveReviewCenterState();
+    renderReviewCenter();
+  }
+
+  return cloneReviewCenterValue(queued);
+}
+
+
 function getProjectIdentity() {
   const root =
     window.BuildMindProjectCore &&
@@ -991,6 +1020,23 @@ function applyConfirmedReviewItem(
           item.title,
         startDate: payload.startDate || '',
         finishDate: payload.finishDate || ''
+      },
+      item
+    );
+  }
+
+  if (item.entityType === 'control') {
+    upsertConfirmedEntity(
+      model.controls,
+      {
+        ...payload,
+        name:
+          payload.requirement ||
+          payload.name ||
+          item.title,
+        status:
+          payload.status ||
+          'open'
       },
       item
     );
@@ -1566,6 +1612,42 @@ function renderModelEntityList(
 }
 
 
+function renderModelControls(controls) {
+  const active = controls.filter(
+    function (item) {
+      return item.status !== 'resolved' &&
+        item.status !== 'excluded';
+    }
+  );
+
+  if (active.length === 0) {
+    return '<p class="review-model-empty">Подтверждённых замечаний нет.</p>';
+  }
+
+  return `
+    <ul class="review-model-list review-model-control-list">
+      ${active.slice(0, 5).map(
+        function (item) {
+          return `
+            <li>
+              <strong>${escapeReviewCenterHtml(item.name)}</strong>
+              <span>${escapeReviewCenterHtml(
+                item.severityLabel ||
+                item.categoryLabel ||
+                'Открыто'
+              )}</span>
+            </li>
+          `;
+        }
+      ).join('')}
+    </ul>
+    ${active.length > 5
+      ? `<p class="review-model-more">Ещё ${active.length - 5}</p>`
+      : ''}
+  `;
+}
+
+
 function renderConfirmedModel() {
   const model = reviewCenterState.model;
   const host = document.getElementById('confirmedModelPanel');
@@ -1582,6 +1664,12 @@ function renderConfirmedModel() {
   const activeMaterials = model.materials.filter(
     function (item) {
       return item.status !== 'excluded';
+    }
+  );
+  const activeControls = model.controls.filter(
+    function (item) {
+      return item.status !== 'resolved' &&
+        item.status !== 'excluded';
     }
   );
 
@@ -1609,6 +1697,7 @@ function renderConfirmedModel() {
       <div><strong>${model.documents.length}</strong><span>Документов</span></div>
       <div><strong>${activeWorks.length}</strong><span>Работ</span></div>
       <div><strong>${activeMaterials.length}</strong><span>Материалов</span></div>
+      <div><strong>${activeControls.length}</strong><span>Замечаний</span></div>
     </div>
 
     <section class="review-model-group">
@@ -1625,6 +1714,11 @@ function renderConfirmedModel() {
         model.materials,
         'Материалы появятся после подтверждения.'
       )}
+    </section>
+
+    <section class="review-model-group">
+      <h3>Открытые замечания</h3>
+      ${renderModelControls(model.controls)}
     </section>
 
     <p class="review-model-updated">
@@ -1983,6 +2077,10 @@ window.BuildMindReviewCenter = {
   getModel: function () {
     return cloneReviewCenterValue(reviewCenterState.model);
   },
+  enqueue: function (item) {
+    return enqueueExternalReviewItems(item)[0] || null;
+  },
+  enqueueMany: enqueueExternalReviewItems,
   sync: syncReviewCenterSources,
   decide: decideReviewItem,
   confirmPending: confirmPendingReviewItems,

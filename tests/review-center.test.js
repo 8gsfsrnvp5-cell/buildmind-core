@@ -350,6 +350,64 @@ function run() {
     )
   );
 
+  const controlItem =
+    context.BuildMindReviewCenter
+      .enqueue({
+        sourceType:
+          'project-completeness',
+        sourceId:
+          'document:project-documentation',
+        entityType:
+          'control',
+        title:
+          'Проектная или рабочая документация',
+        description:
+          'Подтверждённая проектная основа не найдена.',
+        sourceLabel:
+          'Комплектность · модель R10',
+        confidence: 0.94,
+        payload: {
+          requirement:
+            'Проектная или рабочая документация',
+          categoryLabel:
+            'Документы',
+          severity:
+            'critical',
+          severityLabel:
+            'Критично',
+          status:
+            'open'
+        }
+      });
+
+  assert.ok(controlItem);
+  assert.equal(
+    context.BuildMindReviewCenter
+      .decide(
+        controlItem.id,
+        'confirmed',
+        'Пробел подтверждён инженером.'
+      ),
+    true
+  );
+
+  const stateWithControl =
+    context.BuildMindReviewCenter
+      .getState();
+
+  assert.equal(
+    stateWithControl.model.controls.length,
+    1
+  );
+  assert.equal(
+    stateWithControl.model.controls[0].status,
+    'open'
+  );
+  assert.equal(
+    stateWithControl.model.revision,
+    11
+  );
+
   console.log(
     'BuildMind Review Center V1 test: PASS'
   );

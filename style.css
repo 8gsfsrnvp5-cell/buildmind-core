@@ -3761,7 +3761,7 @@ html[dir="rtl"] .project-intake-review-item blockquote {
 
 .review-model-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 
@@ -3926,6 +3926,342 @@ html[dir="rtl"] .project-intake-review-item blockquote {
   }
 
   .review-model-stats {
-    grid-template-columns: repeat(3, minmax(80px, 1fr));
+    grid-template-columns: repeat(2, minmax(100px, 1fr));
+  }
+}
+
+
+/* ==================================================
+   PROJECT COMPLETENESS V1
+   ================================================== */
+
+.project-completeness-section {
+  border-color: #bfd2ff;
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff 0%,
+      #f7faff 100%
+    );
+}
+
+.project-completeness-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.project-completeness-head h2 {
+  margin: 0 0 8px;
+}
+
+.project-completeness-head p {
+  max-width: 780px;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.project-completeness-head .primary {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.completeness-message {
+  margin: 15px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #d4def4;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #405575;
+  font-size: 12px;
+}
+
+#projectCompletenessResult {
+  margin-top: 15px;
+}
+
+.completeness-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.completeness-overview > div {
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.completeness-overview strong {
+  display: block;
+  font-size: 24px;
+}
+
+.completeness-overview span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.completeness-overview .completeness-score {
+  border-color: #9fbaf7;
+  background: #edf3ff;
+}
+
+.completeness-overview .completeness-score strong {
+  color: #1f4fb7;
+}
+
+.completeness-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.completeness-metric {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.completeness-metric > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.completeness-metric strong {
+  font-size: 12px;
+}
+
+.completeness-metric span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.completeness-metric b {
+  color: #344054;
+  font-size: 15px;
+}
+
+.completeness-progress {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf0f5;
+}
+
+.completeness-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d39a21;
+}
+
+.completeness-metric-complete .completeness-progress span {
+  background: #2e8b57;
+}
+
+.completeness-metric-missing .completeness-progress span {
+  background: #c84f43;
+}
+
+.completeness-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.65fr);
+  gap: 16px;
+  margin-top: 17px;
+  align-items: start;
+}
+
+.completeness-detail-grid h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.completeness-findings {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.completeness-finding {
+  display: grid;
+  grid-template-columns: 115px 1fr;
+  gap: 11px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.completeness-finding > span {
+  align-self: start;
+  width: fit-content;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #f1f3f7;
+  color: #475467;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.completeness-finding strong {
+  font-size: 13px;
+}
+
+.completeness-finding p,
+.completeness-finding small {
+  display: block;
+  margin: 5px 0 0;
+  color: #475467;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.completeness-finding small {
+  color: var(--muted);
+}
+
+.completeness-finding-critical {
+  border-left-color: #bc382f;
+}
+
+.completeness-finding-critical > span {
+  background: #ffebe8;
+  color: #9c2d25;
+}
+
+.completeness-finding-high {
+  border-left-color: #df7b26;
+}
+
+.completeness-finding-high > span {
+  background: #fff1df;
+  color: #94500f;
+}
+
+.completeness-finding-warning {
+  border-left-color: #d0a028;
+}
+
+.completeness-finding-warning > span {
+  background: #fff7d8;
+  color: #765a0a;
+}
+
+.completeness-detail-grid aside {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.completeness-detail-grid aside > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.completeness-detail-grid dl {
+  display: grid;
+  gap: 7px;
+  margin: 13px 0 0;
+}
+
+.completeness-detail-grid dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #edf0f4;
+  font-size: 11px;
+}
+
+.completeness-detail-grid dt {
+  color: var(--muted);
+}
+
+.completeness-detail-grid dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 800;
+}
+
+.completeness-knowledge-gap {
+  margin-top: 13px;
+  padding: 10px;
+  border-radius: 9px;
+  background: #fff8e7;
+}
+
+.completeness-knowledge-gap strong {
+  font-size: 11px;
+}
+
+.completeness-knowledge-gap p {
+  margin: 5px 0 0;
+  color: #6b5518;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.completeness-empty {
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.completeness-empty-warning {
+  border-color: #e6c476;
+  background: #fffaf0;
+  color: #6e551a;
+}
+
+.review-model-control-list strong {
+  color: #8b3c28;
+}
+
+@media (max-width: 1050px) {
+  .completeness-overview,
+  .completeness-metrics {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+
+  .completeness-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .project-completeness-head {
+    flex-direction: column;
+  }
+
+  .project-completeness-head .primary {
+    width: 100%;
+  }
+
+  .completeness-overview,
+  .completeness-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .completeness-finding {
+    grid-template-columns: 1fr;
   }
 }
