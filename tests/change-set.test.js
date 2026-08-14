@@ -47,6 +47,10 @@ function createTestContext() {
     }
 
     addEventListener() {}
+
+    setAttribute(name, value) {
+      this[name] = String(value);
+    }
   }
 
   const layout =
@@ -193,6 +197,21 @@ async function run() {
     3
   );
 
+  assert.equal(
+    localStorage.getItem(
+      'buildmind-change-sets-v1'
+    ),
+    null
+  );
+
+  assert.equal(
+    context
+      .BuildMindChangeSet
+      .getAll()
+      .length,
+    0
+  );
+
   const cableChange =
     demo.changes.find(
       function (item) {
@@ -235,10 +254,10 @@ async function run() {
         'confirmed',
         'Проверено инженером'
       ),
-    true
+    false
   );
 
-  const confirmed =
+  const storedDemo =
     context
       .BuildMindChangeSet
       .getAll()
@@ -250,12 +269,8 @@ async function run() {
       );
 
   assert.equal(
-    confirmed.status,
-    'confirmed'
-  );
-  assert.equal(
-    confirmed.decisionComment,
-    'Проверено инженером'
+    storedDemo,
+    undefined
   );
 
   const firstDocument = {
@@ -380,7 +395,7 @@ async function run() {
 
   assert.equal(
     stored.changeSets.length,
-    2
+    1
   );
 
   console.log(
