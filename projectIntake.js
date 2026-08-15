@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.2
+   BUILDMIND PROJECT INTAKE — V1.4
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,12 +15,12 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.2';
-
-const PROJECT_INTAKE_AUTO_DELAY =
-  350;
+  'project-intake-v1.4';
 
 const PROJECT_INTAKE_KIND_LABELS = {
+  composite:
+    'Составной PDF / комплект документов',
+
   'project-documentation':
     'Проектная / рабочая документация',
 
@@ -83,8 +83,47 @@ let projectIntakeLastResult =
 let projectIntakeAnalysisInProgress =
   false;
 
-let projectIntakeAutoTimer =
+let projectIntakeAnalysisController =
   null;
+
+let projectIntakeCancelRequested =
+  false;
+
+function createProjectIntakeAbortError() {
+  const error = new Error(
+    'Анализ остановлен пользователем.'
+  );
+
+  error.name = 'AbortError';
+  error.code =
+    'PROJECT_INTAKE_ANALYSIS_CANCELLED';
+
+  return error;
+}
+
+function isProjectIntakeAbortError(
+  error
+) {
+  return Boolean(
+    error &&
+    (
+      error.name === 'AbortError' ||
+      error.code ===
+        'PROJECT_INTAKE_ANALYSIS_CANCELLED' ||
+      error.code ===
+        'PDF_ANALYSIS_CANCELLED' ||
+      error.code === 'OCR_CANCELLED'
+    )
+  );
+}
+
+function throwIfProjectIntakeCancelled(
+  signal
+) {
+  if (signal?.aborted) {
+    throw createProjectIntakeAbortError();
+  }
+}
 
 function intakeT(
   key
@@ -443,6 +482,9 @@ function mapExistingPdfClassification(
   }
 
   const mapping = {
+    composite:
+      'composite',
+
     schedule:
       'schedule',
 
@@ -519,6 +561,48 @@ function mapExistingPdfClassification(
 function classifyProjectIntakePdf(
   documentItem
 ) {
+  const compositeAnalysis =
+    documentItem
+      ?.analysis
+      ?.compositeAnalysis;
+
+  if (
+    compositeAnalysis
+      ?.isComposite
+  ) {
+    return {
+      kind: 'composite',
+      confidence: 'high',
+      source:
+        'Постраничный анализ выявил несколько самостоятельных разделов'
+    };
+  }
+
+  const compositeSections =
+    Array.isArray(
+      compositeAnalysis
+        ?.meaningfulSections
+    )
+      ? compositeAnalysis
+          .meaningfulSections
+      : [];
+
+  if (
+    compositeSections.length === 1 &&
+    compositeSections[0].kind
+  ) {
+    return {
+      kind:
+        compositeSections[0].kind,
+      confidence:
+        compositeSections[0]
+          .confidence ||
+        'medium',
+      source:
+        'Постраничный анализ структуры PDF'
+    };
+  }
+
   const heuristic =
     classifyProjectIntakeByNameAndText(
       documentItem
@@ -1090,8 +1174,13 @@ function extractProjectIntakeApprovals(
 }
 
 async function analyzeProjectIntakePdf(
-  documentItem
+  documentItem,
+  options = {}
 ) {
+  throwIfProjectIntakeCancelled(
+    options.signal
+  );
+
   const api =
     window.BuildMindProjectDocuments;
 
@@ -1108,7 +1197,8 @@ async function analyzeProjectIntakePdf(
     ) {
       await api
         .analyzePdfDocument(
-          documentItem
+          documentItem,
+          options
         );
     } else if (
       typeof inspectPdfDocument ===
@@ -1120,6 +1210,8 @@ async function analyzeProjectIntakePdf(
       documentItem.analysis =
         await inspectPdfDocument(
           documentItem
+          ,
+          options
         );
 
       documentItem.status =
@@ -1131,11 +1223,54 @@ async function analyzeProjectIntakePdf(
     }
   }
 
+  throwIfProjectIntakeCancelled(
+    options.signal
+  );
+
+  const compositeAnalysis =
+    documentItem
+      .analysis
+      ?.compositeAnalysis ||
+    null;
+
   return {
     classification:
       classifyProjectIntakePdf(
         documentItem
       ),
+
+    compositeAnalysis,
+
+    sections:
+      Array.isArray(
+        compositeAnalysis
+          ?.meaningfulSections
+      )
+        ? compositeAnalysis
+            .meaningfulSections
+        : [],
+
+    ocrPages:
+      Array.isArray(
+        documentItem
+          .analysis
+          ?.ocrPages
+      )
+        ? documentItem
+            .analysis
+            .ocrPages
+        : [],
+
+    unreadablePages:
+      Array.isArray(
+        documentItem
+          .analysis
+          ?.ocrFailedPages
+      )
+        ? documentItem
+            .analysis
+            .ocrFailedPages
+        : [],
 
     works: [],
 
@@ -1337,7 +1472,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АВТОМАТИЧЕСКИЙ АНАЛИЗ · V1.1
+          АНАЛИЗ КОМПЛЕКТА · V1.4
         </span>
 
         <h2>
@@ -1380,7 +1515,17 @@ function createProjectIntakeUi() {
             intakeT(
               'intake.analyze'
             )
-          )}
+            )}
+        </button>
+
+        <button
+          type="button"
+          id="projectIntakeCancelBtn"
+          class="project-intake-cancel-btn"
+          disabled
+          hidden
+        >
+          Остановить анализ
         </button>
       </div>
     </div>
@@ -1425,6 +1570,28 @@ function createProjectIntakeUi() {
       <div class="project-intake-summary-review">
         <strong id="projectIntakeReviewCount">0</strong>
         <span>Требует проверки</span>
+      </div>
+    </div>
+
+    <div class="project-intake-composite-summary">
+      <div>
+        <strong id="projectIntakeSectionsCount">0</strong>
+        <span>Разделы внутри PDF</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeWorkVolumeSectionsCount">0</strong>
+        <span>Найдено ВОР</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeScheduleSectionsCount">0</strong>
+        <span>Найдено ГПР</span>
+      </div>
+
+      <div>
+        <strong id="projectIntakeOcrPagesCount">0</strong>
+        <span>Страниц прочитано OCR</span>
       </div>
     </div>
 
@@ -1543,6 +1710,80 @@ function renderProjectIntakeDocumentList(
             ] ||
             'Не определена';
 
+          const sections =
+            Array.isArray(item.sections)
+              ? item.sections
+              : [];
+
+          const sectionsHtml =
+            sections.length > 0
+              ? `
+                <div class="project-intake-section-list">
+                  ${sections.map(
+                    function (section) {
+                      const pageRange =
+                        section.startPage ===
+                          section.endPage
+                          ? `стр. ${section.startPage}`
+                          : `стр. ${section.startPage}–${section.endPage}`;
+
+                      const sectionConfidence =
+                        PROJECT_INTAKE_CONFIDENCE_LABELS[
+                          section.confidence
+                        ] ||
+                        'Требует уточнения';
+
+                      const scheduleDateText =
+                        section.kind ===
+                          'schedule' &&
+                        section.dateRange
+                          ? ` · даты ${section.dateRange.startDate} — ${section.dateRange.endDate}` +
+                            (
+                              section.scheduleStatus ===
+                                'expired'
+                                ? ' · срок графика прошёл'
+                                : ''
+                            )
+                          : '';
+
+                      return `
+                        <div class="project-intake-section-row">
+                          <strong>
+                            ${escapeProjectIntakeHtml(
+                              section.label ||
+                              PROJECT_INTAKE_KIND_LABELS[
+                                section.kind
+                              ] ||
+                              PROJECT_INTAKE_KIND_LABELS.other
+                            )}
+                          </strong>
+
+                          <span>
+                            ${escapeProjectIntakeHtml(
+                              pageRange
+                            )}
+                          </span>
+
+                          <small>
+                            ${escapeProjectIntakeHtml(
+                              sectionConfidence +
+                              scheduleDateText
+                            )}
+                          </small>
+                        </div>
+                      `;
+                    }
+                  ).join('')}
+                </div>
+              `
+              : '';
+
+          const ocrText =
+            Array.isArray(item.ocrPages) &&
+            item.ocrPages.length > 0
+              ? `OCR прочитал страницы: ${item.ocrPages.join(', ')}`
+              : '';
+
           return `
             <article class="project-intake-item">
               <div>
@@ -1565,6 +1806,16 @@ function renderProjectIntakeDocumentList(
                       .classificationSource
                   )}
                 </small>
+
+                ${sectionsHtml}
+
+                ${
+                  ocrText
+                    ? `<small class="project-intake-ocr-note">${escapeProjectIntakeHtml(
+                        ocrText
+                      )}</small>`
+                    : ''
+                }
               </div>
 
               <span
@@ -1623,6 +1874,94 @@ function renderProjectIntakeReviewList(
       )
       .map(
         function (item) {
+          if (
+            item.reviewType ===
+            'schedule-document-expired'
+          ) {
+            const pageRange =
+              item.startPage ===
+                item.endPage
+                ? `стр. ${item.startPage}`
+                : `стр. ${item.startPage}–${item.endPage}`;
+
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Актуальность ГПР
+                </span>
+
+                <strong>
+                  Найден график с прошедшими датами
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )} ·
+                  ${escapeProjectIntakeHtml(
+                    pageRange
+                  )}
+                </p>
+
+                <small>
+                  Диапазон дат:
+                  ${escapeProjectIntakeHtml(
+                    item.startDate || '—'
+                  )}
+                  —
+                  ${escapeProjectIntakeHtml(
+                    item.endDate || '—'
+                  )}.
+                  Дата анализа:
+                  ${escapeProjectIntakeHtml(
+                    item.analysisDate || '—'
+                  )}.
+                  Это не автоматическая ошибка проекта:
+                  инженер должен подтвердить, актуален ли график.
+                </small>
+              </article>
+            `;
+          }
+
+          if (
+            item.reviewType ===
+            'ocr-gap'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Непрочитанные страницы
+                </span>
+
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )}
+                </strong>
+
+                <p>
+                  Страницы:
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.pageNumbers
+                    )
+                      ? item.pageNumbers.join(', ')
+                      : ''
+                  )}
+                </p>
+
+                <small>
+                  ${escapeProjectIntakeHtml(
+                    item.reason ||
+                    'Текст не удалось распознать.'
+                  )}
+                  Эти страницы не используются автоматически
+                  до ручной проверки.
+                </small>
+              </article>
+            `;
+          }
+
           if (
             item.reviewType ===
             'schedule-anomaly'
@@ -1869,10 +2208,37 @@ function renderProjectIntake(
       'projectIntakeAnalyzeBtn'
     );
 
+  const selectButton =
+    document.getElementById(
+      'projectIntakeSelectBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
+    );
+
   if (analyzeButton) {
     analyzeButton.disabled =
       projectIntakeAnalysisInProgress ||
       documents.length === 0;
+  }
+
+  if (selectButton) {
+    selectButton.disabled =
+      projectIntakeAnalysisInProgress;
+  }
+
+  if (cancelButton) {
+    cancelButton.hidden =
+      !projectIntakeAnalysisInProgress;
+    cancelButton.disabled =
+      !projectIntakeAnalysisInProgress ||
+      projectIntakeCancelRequested;
+    cancelButton.textContent =
+      projectIntakeCancelRequested
+        ? 'Останавливаем…'
+        : 'Остановить анализ';
   }
 
   if (!result) {
@@ -1886,7 +2252,11 @@ function renderProjectIntake(
       'Materials',
       'Commercial',
       'Approvals',
-      'Review'
+      'Review',
+      'Sections',
+      'WorkVolumeSections',
+      'ScheduleSections',
+      'OcrPages'
     ].forEach(
       function (suffix) {
         setProjectIntakeText(
@@ -1953,6 +2323,26 @@ function renderProjectIntake(
     result.reviewItems.length
   );
 
+  setProjectIntakeText(
+    'projectIntakeSectionsCount',
+    result.sectionsCount || 0
+  );
+
+  setProjectIntakeText(
+    'projectIntakeWorkVolumeSectionsCount',
+    result.workVolumeSectionsCount || 0
+  );
+
+  setProjectIntakeText(
+    'projectIntakeScheduleSectionsCount',
+    result.scheduleSectionsCount || 0
+  );
+
+  setProjectIntakeText(
+    'projectIntakeOcrPagesCount',
+    result.ocrPagesCount || 0
+  );
+
   renderProjectIntakeDocumentList(
     result
   );
@@ -2001,8 +2391,36 @@ async function runBuildMindProjectIntake() {
       'projectIntakeAnalyzeBtn'
     );
 
+  const selectButton =
+    document.getElementById(
+      'projectIntakeSelectBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
+    );
+
+  const analysisController =
+    new AbortController();
+
+  projectIntakeAnalysisController =
+    analysisController;
+
+  projectIntakeCancelRequested =
+    false;
+
   projectIntakeAnalysisInProgress =
     true;
+
+  if (
+    window.BuildMindProjectDocuments &&
+    typeof window.BuildMindProjectDocuments
+      .setBusy === 'function'
+  ) {
+    window.BuildMindProjectDocuments
+      .setBusy(true);
+  }
 
   if (analyzeButton) {
     analyzeButton.disabled =
@@ -2010,6 +2428,17 @@ async function runBuildMindProjectIntake() {
 
     analyzeButton.textContent =
       'Анализ…';
+  }
+
+  if (selectButton) {
+    selectButton.disabled = true;
+  }
+
+  if (cancelButton) {
+    cancelButton.hidden = false;
+    cancelButton.disabled = false;
+    cancelButton.textContent =
+      'Остановить анализ';
   }
 
   setProjectIntakeText(
@@ -2032,6 +2461,21 @@ async function runBuildMindProjectIntake() {
 
     documents:
       [],
+
+    sectionsCount:
+      0,
+
+    workVolumeSectionsCount:
+      0,
+
+    scheduleSectionsCount:
+      0,
+
+    ocrPagesCount:
+      0,
+
+    unreadablePagesCount:
+      0,
 
     worksCount:
       0,
@@ -2059,6 +2503,10 @@ async function runBuildMindProjectIntake() {
         documents.length;
       index += 1
     ) {
+      throwIfProjectIntakeCancelled(
+        analysisController.signal
+      );
+
       const documentItem =
         documents[
           index
@@ -2088,7 +2536,11 @@ async function runBuildMindProjectIntake() {
       ) {
         analyzed =
           await analyzeProjectIntakePdf(
-            documentItem
+            documentItem,
+            {
+              signal:
+                analysisController.signal
+            }
           );
       } else if (
         [
@@ -2130,9 +2582,34 @@ async function runBuildMindProjectIntake() {
         };
       }
 
+      throwIfProjectIntakeCancelled(
+        analysisController.signal
+      );
+
       const classification =
         analyzed
           .classification;
+
+      const sections =
+        Array.isArray(
+          analyzed.sections
+        )
+          ? analyzed.sections
+          : [];
+
+      const ocrPages =
+        Array.isArray(
+          analyzed.ocrPages
+        )
+          ? analyzed.ocrPages
+          : [];
+
+      const unreadablePages =
+        Array.isArray(
+          analyzed.unreadablePages
+        )
+          ? analyzed.unreadablePages
+          : [];
 
       const documentResult = {
         documentId:
@@ -2156,6 +2633,24 @@ async function runBuildMindProjectIntake() {
           classification
             .source,
 
+        sections,
+
+        isComposite:
+          analyzed
+            .compositeAnalysis
+            ?.isComposite === true,
+
+        totalPages:
+          Number(
+            documentItem
+              .analysis
+              ?.totalPages
+          ) || 0,
+
+        ocrPages,
+
+        unreadablePages,
+
         requiresReview:
           classification
             .confidence !==
@@ -2172,6 +2667,82 @@ async function runBuildMindProjectIntake() {
         .push(
           documentResult
         );
+
+      result.sectionsCount +=
+        sections.length;
+
+      result.workVolumeSectionsCount +=
+        sections.filter(
+          function (section) {
+            return section.kind ===
+              'work-volume';
+          }
+        ).length;
+
+      result.scheduleSectionsCount +=
+        sections.filter(
+          function (section) {
+            return section.kind ===
+              'schedule';
+          }
+        ).length;
+
+      result.ocrPagesCount +=
+        ocrPages.length;
+
+      result.unreadablePagesCount +=
+        unreadablePages.length;
+
+      sections
+        .filter(
+          function (section) {
+            return (
+              section.kind ===
+                'schedule' &&
+              section.scheduleStatus ===
+                'expired'
+            );
+          }
+        )
+        .forEach(
+          function (section) {
+            result.reviewItems.push({
+              reviewType:
+                'schedule-document-expired',
+              fileName:
+                documentItem.file.name,
+              startPage:
+                section.startPage,
+              endPage:
+                section.endPage,
+              startDate:
+                section
+                  .dateRange
+                  ?.startDate || null,
+              endDate:
+                section
+                  .dateRange
+                  ?.endDate || null,
+              analysisDate:
+                section.analysisDate || null
+            });
+          }
+        );
+
+      if (unreadablePages.length > 0) {
+        result.reviewItems.push({
+          reviewType: 'ocr-gap',
+          fileName:
+            documentItem.file.name,
+          pageNumbers:
+            unreadablePages,
+          reason:
+            documentItem
+              .analysis
+              ?.ocrUnavailableReason ||
+            'Текст страницы не удалось распознать.'
+        });
+      }
 
       result.worksCount +=
         analyzed
@@ -2218,14 +2789,30 @@ async function runBuildMindProjectIntake() {
             )
         );
 
-      if (
+      const commercialSections =
+        sections.filter(
+          function (section) {
+            return [
+              'estimate',
+              'commercial-proposal',
+              'agreement'
+            ].includes(
+              section.kind
+            );
+          }
+        ).length;
+
+      if (commercialSections > 0) {
+        result
+          .commercialDocumentsCount +=
+          commercialSections;
+      } else if (
         [
           'estimate',
           'commercial-proposal',
           'agreement'
         ].includes(
-          classification
-            .kind
+          classification.kind
         )
       ) {
         result
@@ -2358,6 +2945,20 @@ async function runBuildMindProjectIntake() {
 
     return result;
   } catch (error) {
+    if (isProjectIntakeAbortError(error)) {
+      setProjectIntakeText(
+        'projectIntakeStatus',
+        'Анализ остановлен. Загруженные документы сохранены в текущей вкладке — можно запустить анализ повторно.'
+      );
+
+      return {
+        success: false,
+        cancelled: true,
+        errorCode:
+          'PROJECT_INTAKE_ANALYSIS_CANCELLED'
+      };
+    }
+
     console.error(
       'BuildMind Project Intake: ошибка анализа:',
       error
@@ -2382,6 +2983,26 @@ async function runBuildMindProjectIntake() {
     projectIntakeAnalysisInProgress =
       false;
 
+    projectIntakeCancelRequested =
+      false;
+
+    if (
+      projectIntakeAnalysisController ===
+      analysisController
+    ) {
+      projectIntakeAnalysisController =
+        null;
+    }
+
+    if (
+      window.BuildMindProjectDocuments &&
+      typeof window.BuildMindProjectDocuments
+        .setBusy === 'function'
+    ) {
+      window.BuildMindProjectDocuments
+        .setBusy(false);
+    }
+
     if (analyzeButton) {
       analyzeButton.disabled =
         getProjectIntakeDocuments()
@@ -2392,20 +3013,25 @@ async function runBuildMindProjectIntake() {
           'intake.analyze'
         );
     }
+
+    if (selectButton) {
+      selectButton.disabled = false;
+    }
+
+    if (cancelButton) {
+      cancelButton.hidden = true;
+      cancelButton.disabled = true;
+      cancelButton.textContent =
+        'Остановить анализ';
+    }
   }
 }
 
-function queueProjectIntakeAutoAnalysis() {
-  if (
-    projectIntakeAutoTimer
-  ) {
-    clearTimeout(
-      projectIntakeAutoTimer
-    );
-  }
-
+function handleProjectIntakeDocumentsChanged() {
   const documents =
     getProjectIntakeDocuments();
+
+  projectIntakeLastResult = null;
 
   renderProjectIntake(
     null
@@ -2414,17 +3040,49 @@ function queueProjectIntakeAutoAnalysis() {
   if (
     documents.length === 0
   ) {
-    projectIntakeLastResult =
-      null;
+    setProjectIntakeText(
+      'projectIntakeStatus',
+      intakeT('intake.empty')
+    );
 
     return;
   }
 
-  projectIntakeAutoTimer =
-    setTimeout(
-      runBuildMindProjectIntake,
-      PROJECT_INTAKE_AUTO_DELAY
+  setProjectIntakeText(
+    'projectIntakeStatus',
+    `Загружено документов: ${documents.length}. ` +
+      'Нажмите «Анализировать комплект». Анализ не запускается автоматически.'
+  );
+}
+
+function cancelBuildMindProjectIntake() {
+  if (
+    !projectIntakeAnalysisInProgress ||
+    !projectIntakeAnalysisController ||
+    projectIntakeCancelRequested
+  ) {
+    return;
+  }
+
+  projectIntakeCancelRequested = true;
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
     );
+
+  if (cancelButton) {
+    cancelButton.disabled = true;
+    cancelButton.textContent =
+      'Останавливаем…';
+  }
+
+  setProjectIntakeText(
+    'projectIntakeStatus',
+    'Останавливаем анализ и освобождаем ресурсы браузера…'
+  );
+
+  projectIntakeAnalysisController.abort();
 }
 
 function bindProjectIntakeControls() {
@@ -2436,6 +3094,11 @@ function bindProjectIntakeControls() {
   const analyzeButton =
     document.getElementById(
       'projectIntakeAnalyzeBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
     );
 
   if (selectButton) {
@@ -2470,6 +3133,13 @@ function bindProjectIntakeControls() {
       runBuildMindProjectIntake
     );
   }
+
+  if (cancelButton) {
+    cancelButton.addEventListener(
+      'click',
+      cancelBuildMindProjectIntake
+    );
+  }
 }
 
 function initializeBuildMindProjectIntake() {
@@ -2479,7 +3149,28 @@ function initializeBuildMindProjectIntake() {
 
   window.addEventListener(
     'buildmind:project-documents-changed',
-    queueProjectIntakeAutoAnalysis
+    handleProjectIntakeDocumentsChanged
+  );
+
+  window.addEventListener(
+    'buildmind:pdf-analysis-progress',
+
+    function (event) {
+      const detail =
+        event?.detail;
+
+      if (
+        !detail?.message ||
+        !projectIntakeAnalysisInProgress
+      ) {
+        return;
+      }
+
+      setProjectIntakeText(
+        'projectIntakeStatus',
+        detail.message
+      );
+    }
   );
 
   window.addEventListener(

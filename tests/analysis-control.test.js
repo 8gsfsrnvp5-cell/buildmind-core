@@ -1,0 +1,86 @@
+'use strict';
+
+const assert =
+  require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = path.resolve(
+  __dirname,
+  '..'
+);
+
+const app = fs.readFileSync(
+  path.join(root, 'app.js'),
+  'utf8'
+);
+
+const intake = fs.readFileSync(
+  path.join(root, 'projectIntake.js'),
+  'utf8'
+);
+
+const index = fs.readFileSync(
+  path.join(root, 'index.html'),
+  'utf8'
+);
+
+assert.equal(
+  index.includes('id="analyzePdfBtn"'),
+  false,
+  'В интерфейсе должна оставаться только одна кнопка анализа комплекта.'
+);
+
+assert.equal(
+  intake.includes(
+    'id="projectIntakeCancelBtn"'
+  ),
+  true,
+  'Во время анализа должна быть доступна кнопка остановки.'
+);
+
+assert.equal(
+  intake.includes(
+    'PROJECT_INTAKE_AUTO_DELAY'
+  ),
+  false,
+  'Загрузка файла не должна автоматически запускать тяжёлый анализ.'
+);
+
+assert.equal(
+  intake.includes(
+    'Анализ не запускается автоматически.'
+  ),
+  true
+);
+
+assert.equal(
+  app.includes(
+    'PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS'
+  ),
+  true,
+  'OCR страницы должен иметь ограничение времени.'
+);
+
+assert.equal(
+  app.includes(
+    'projectDocumentsAnalysisBusy'
+  ),
+  true,
+  'Загрузка и удаление документов должны блокироваться во время анализа.'
+);
+
+const nativeStage = app.indexOf(
+  'Этап 1: быстро читаем штатный текстовый слой'
+);
+
+const ocrStage = app.indexOf(
+  'Этап 2: последовательно распознаём'
+);
+
+assert.ok(nativeStage >= 0);
+assert.ok(ocrStage > nativeStage);
+
+console.log(
+  'BuildMind analysis control test: PASS'
+);
