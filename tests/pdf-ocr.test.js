@@ -44,6 +44,66 @@ async function run() {
       7000000 + 1
   );
 
+  let abortInterrupted = false;
+  const abortController =
+    new AbortController();
+
+  const abortedOperation =
+    pdfOcr.runControlledOperation(
+      new Promise(function () {}),
+      {
+        signal:
+          abortController.signal,
+        timeoutMs: 5000,
+        onInterrupt() {
+          abortInterrupted = true;
+        }
+      }
+    );
+
+  abortController.abort();
+
+  await assert.rejects(
+    abortedOperation,
+    function (error) {
+      return (
+        error.name === 'AbortError' &&
+        error.code === 'OCR_CANCELLED'
+      );
+    }
+  );
+
+  assert.equal(
+    abortInterrupted,
+    true
+  );
+
+  let timeoutInterrupted = false;
+
+  await assert.rejects(
+    pdfOcr.runControlledOperation(
+      new Promise(function () {}),
+      {
+        timeoutMs: 1000,
+        onInterrupt() {
+          timeoutInterrupted = true;
+        }
+      }
+    ),
+    function (error) {
+      return (
+        error.name === 'TimeoutError' &&
+        error.code ===
+          'OCR_PAGE_TIMEOUT'
+      );
+    }
+  );
+
+  assert.equal(
+    timeoutInterrupted,
+    true
+  );
+
   let terminated = false;
   let rendered = false;
 

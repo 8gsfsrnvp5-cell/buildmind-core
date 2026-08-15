@@ -2723,6 +2723,7 @@ function applySavedMaterialCandidateReview(
 }
 
 let uploadedProjectDocuments = [];
+let projectDocumentsAnalysisBusy = false;
 
 function notifyProjectDocumentsChanged(
   action,
@@ -3021,6 +3022,16 @@ function renderProjectDocuments() {
       'clearDocumentsBtn'
     );
 
+  const selectButton =
+    document.getElementById(
+      'selectDocumentsBtn'
+    );
+
+  const input =
+    document.getElementById(
+      'projectDocumentsInput'
+    );
+
   if (
     !list ||
     !count ||
@@ -3038,7 +3049,18 @@ function renderProjectDocuments() {
     );
 
   clearButton.disabled =
+    projectDocumentsAnalysisBusy ||
     uploadedProjectDocuments.length === 0;
+
+  if (selectButton) {
+    selectButton.disabled =
+      projectDocumentsAnalysisBusy;
+  }
+
+  if (input) {
+    input.disabled =
+      projectDocumentsAnalysisBusy;
+  }
 
   if (
     uploadedProjectDocuments.length === 0
@@ -3878,6 +3900,9 @@ candidatesTable.appendChild(
       removeButton.dataset.documentId =
         documentItem.id;
 
+      removeButton.disabled =
+        projectDocumentsAnalysisBusy;
+
       card.appendChild(main);
       card.appendChild(removeButton);
       list.appendChild(card);
@@ -3886,6 +3911,10 @@ candidatesTable.appendChild(
 }
 
 function addProjectDocuments(fileList) {
+  if (projectDocumentsAnalysisBusy) {
+    return;
+  }
+
   const allowedExtensions = [
     'pdf',
     'xlsx',
@@ -4019,6 +4048,10 @@ function initializeProjectDocuments() {
  clearButton.addEventListener(
   'click',
   function () {
+    if (projectDocumentsAnalysisBusy) {
+      return;
+    }
+
     const removedDocumentIds =
       uploadedProjectDocuments.map(
         function (documentItem) {
@@ -4046,6 +4079,10 @@ function initializeProjectDocuments() {
         );
 
       if (!removeButton) {
+        return;
+      }
+
+      if (projectDocumentsAnalysisBusy) {
         return;
       }
 
@@ -4947,15 +4984,89 @@ function getProjectDocumentCompositeClassification(
   };
 }
 
+const PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS =
+  90000;
+
+function createProjectDocumentAbortError() {
+  const error = new Error(
+    'Анализ остановлен пользователем.'
+  );
+
+  error.name = 'AbortError';
+  error.code = 'PDF_ANALYSIS_CANCELLED';
+
+  return error;
+}
+
+function isProjectDocumentAbortError(
+  error
+) {
+  return Boolean(
+    error &&
+    (
+      error.name === 'AbortError' ||
+      error.code ===
+        'PDF_ANALYSIS_CANCELLED' ||
+      error.code === 'OCR_CANCELLED'
+    )
+  );
+}
+
+function throwIfProjectDocumentAnalysisCancelled(
+  signal
+) {
+  if (signal?.aborted) {
+    throw createProjectDocumentAbortError();
+  }
+}
+
+function yieldProjectDocumentAnalysis() {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, 0);
+  });
+}
+
+function getProjectDocumentMeaningfulLength(
+  text
+) {
+  return window.BuildMindPdfOcr &&
+    typeof window
+      .BuildMindPdfOcr
+      .meaningfulTextLength ===
+      'function'
+    ? window
+        .BuildMindPdfOcr
+        .meaningfulTextLength(text)
+    : String(text || '')
+        .replace(/\s+/g, '')
+        .length;
+}
+
 async function inspectPdfDocument(
-  documentItem
+  documentItem,
+  options = {}
 ) {
   let pdfDocument = null;
   let ocrSession = null;
 
+  const signal = options.signal || null;
+  const pageTimeoutMs = Math.max(
+    1000,
+    Number(options.pageTimeoutMs) ||
+      PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS
+  );
+
   try {
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
+
     const fileBuffer =
       await documentItem.file.arrayBuffer();
+
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
 
     const loadingTask =
       window.pdfjsLib.getDocument({
@@ -4964,6 +5075,10 @@ async function inspectPdfDocument(
 
     pdfDocument =
       await loadingTask.promise;
+
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
 
     let pagesWithText = 0;
     let nativePagesWithText = 0;
@@ -4975,244 +5090,335 @@ async function inspectPdfDocument(
     const ocrPages = [];
     const ocrFailedPages = [];
 
+    /*
+     * Этап 1: быстро читаем штатный текстовый слой всех
+     * страниц. OCR на этом этапе не запускается, поэтому
+     * пользователь сразу видит движение по всему PDF.
+     */
     for (
       let pageNumber = 1;
       pageNumber <= pdfDocument.numPages;
       pageNumber += 1
     ) {
+      throwIfProjectDocumentAnalysisCancelled(
+        signal
+      );
+
       const page =
         await pdfDocument.getPage(
           pageNumber
         );
 
-      const textContent =
-        await page.getTextContent();
+      try {
+        const textContent =
+          await page.getTextContent();
 
-      const extractedText =
-        extractProjectDocumentPageText(
-          textContent.items
-        );
+        const extractedText =
+          extractProjectDocumentPageText(
+            textContent.items
+          );
 
-      const nativeMeaningfulLength =
-        window.BuildMindPdfOcr &&
-        typeof window
-          .BuildMindPdfOcr
-          .meaningfulTextLength ===
-          'function'
-          ? window
-              .BuildMindPdfOcr
-              .meaningfulTextLength(
-                extractedText
-              )
-          : extractedText.replace(
-              /\s+/g,
-              ''
-            ).length;
-
-      if (nativeMeaningfulLength >= 20) {
-        nativePagesWithText += 1;
-      }
-
-      let pageText =
-        extractedText;
-      let extractionMethod =
-        nativeMeaningfulLength >= 20
-          ? 'text'
-          : 'none';
-      let ocrConfidence = null;
-
-      const shouldRunOcr =
-        window.BuildMindPdfOcr &&
-        typeof window
-          .BuildMindPdfOcr
-          .shouldRecognize ===
-          'function' &&
-        window
-          .BuildMindPdfOcr
-          .shouldRecognize(
+        const nativeMeaningfulLength =
+          getProjectDocumentMeaningfulLength(
             extractedText
           );
 
-      if (shouldRunOcr) {
-        ocrAttemptedPages.push(
-          pageNumber
-        );
-
-        if (ocrUnavailableReason) {
-          if (nativeMeaningfulLength < 20) {
-            ocrFailedPages.push(
-              pageNumber
-            );
-          }
-        } else {
-          try {
-          if (
-            !window.BuildMindPdfOcr
-              .isAvailable()
-          ) {
-            throw new Error(
-              'OCR-библиотека не загрузилась.'
-            );
-          }
-
-          if (!ocrSession) {
-            notifyProjectDocumentAnalysisProgress(
-              documentItem,
-              {
-                stage: 'ocr-loading',
-                pageNumber,
-                totalPages:
-                  pdfDocument.numPages,
-                message:
-                  'Подключается локальное OCR для страниц без текста…'
-              }
-            );
-
-            ocrSession =
-              await window
-                .BuildMindPdfOcr
-                .createSession();
-          }
-
-          const recognition =
-            await ocrSession
-              .recognizePage(
-                page,
-                pageNumber,
-                {
-                  onProgress(
-                    progress
-                  ) {
-                    const percent =
-                      Math.round(
-                        (
-                          Number(
-                            progress
-                              ?.progress
-                          ) || 0
-                        ) * 100
-                      );
-
-                    notifyProjectDocumentAnalysisProgress(
-                      documentItem,
-                      {
-                        stage: 'ocr',
-                        pageNumber,
-                        totalPages:
-                          pdfDocument.numPages,
-                        progress:
-                          percent,
-                        message:
-                          `OCR: страница ${pageNumber} ` +
-                          `из ${pdfDocument.numPages} · ` +
-                          `${percent}%`
-                      }
-                    );
-                  }
-                }
-              );
-
-          if (
-            recognition
-              .meaningfulTextLength >= 20
-          ) {
-            pageText =
-              recognition.text;
-            extractionMethod =
-              'ocr';
-            ocrConfidence =
-              recognition.confidence;
-            ocrPages.push(
-              pageNumber
-            );
-          } else {
-            if (nativeMeaningfulLength < 20) {
-              ocrFailedPages.push(
-                pageNumber
-              );
-            }
-          }
-          } catch (ocrError) {
-            console.warn(
-              `OCR страницы ${pageNumber} не выполнен:`,
-              ocrError
-            );
-
-            ocrUnavailableReason =
-              ocrUnavailableReason ||
-              String(
-                ocrError?.message ||
-                'OCR недоступен.'
-              );
-
-            if (nativeMeaningfulLength < 20) {
-              ocrFailedPages.push(
-                pageNumber
-              );
-            }
-          }
+        if (nativeMeaningfulLength >= 20) {
+          nativePagesWithText += 1;
         }
-      }
 
-      const meaningfulTextLength =
-        window.BuildMindPdfOcr &&
-        typeof window
-          .BuildMindPdfOcr
-          .meaningfulTextLength ===
-          'function'
-          ? window
-              .BuildMindPdfOcr
-              .meaningfulTextLength(
-                pageText
-              )
-          : pageText.replace(
-              /\s+/g,
-              ''
-            ).length;
+        const shouldRunOcr =
+          window.BuildMindPdfOcr &&
+          typeof window
+            .BuildMindPdfOcr
+            .shouldRecognize ===
+            'function' &&
+          window
+            .BuildMindPdfOcr
+            .shouldRecognize(
+              extractedText
+            );
 
-      const pageResult = {
-        pageNumber,
-        textLength:
-          pageText.length,
-        text:
-          pageText.slice(
-            0,
-            30000
-          ),
-        truncated:
-          pageText.length > 30000,
-        extractionMethod,
-        nativeTextLength:
-          extractedText.length,
-        ocrConfidence
-      };
+        if (shouldRunOcr) {
+          ocrAttemptedPages.push(
+            pageNumber
+          );
+        }
 
-      pageAnalyses.push(
-        pageResult
-      );
-
-      if (meaningfulTextLength >= 20) {
-        pagesWithText += 1;
-        extractedPages.push(
-          pageResult
-        );
-      }
-
-      notifyProjectDocumentAnalysisProgress(
-        documentItem,
-        {
-          stage: 'page-complete',
+        pageAnalyses.push({
           pageNumber,
-          totalPages:
-            pdfDocument.numPages,
-          message:
-            `Прочитано страниц: ${pageNumber} ` +
-            `из ${pdfDocument.numPages}`
-        }
+          textLength:
+            extractedText.length,
+          text:
+            extractedText.slice(
+              0,
+              30000
+            ),
+          truncated:
+            extractedText.length > 30000,
+          extractionMethod:
+            nativeMeaningfulLength >= 20
+              ? 'text'
+              : 'none',
+          nativeTextLength:
+            extractedText.length,
+          nativeMeaningfulLength,
+          requiresOcr:
+            shouldRunOcr,
+          ocrConfidence: null
+        });
+
+        notifyProjectDocumentAnalysisProgress(
+          documentItem,
+          {
+            stage: 'native-text',
+            pageNumber,
+            totalPages:
+              pdfDocument.numPages,
+            message:
+              `Чтение текста: страница ${pageNumber} ` +
+              `из ${pdfDocument.numPages}`
+          }
+        );
+      } finally {
+        page.cleanup();
+      }
+
+      await yieldProjectDocumentAnalysis();
+    }
+
+    /*
+     * Этап 2: последовательно распознаём только страницы,
+     * где штатного текста недостаточно. Одновременно всегда
+     * работает ровно одна OCR-сессия.
+     */
+    for (
+      let ocrIndex = 0;
+      ocrIndex < ocrAttemptedPages.length;
+      ocrIndex += 1
+    ) {
+      throwIfProjectDocumentAnalysisCancelled(
+        signal
       );
 
-      page.cleanup();
+      const pageNumber =
+        ocrAttemptedPages[ocrIndex];
+      const pageResult =
+        pageAnalyses[pageNumber - 1];
+
+      if (ocrUnavailableReason) {
+        if (
+          pageResult.nativeMeaningfulLength < 20
+        ) {
+          ocrFailedPages.push(pageNumber);
+        }
+
+        continue;
+      }
+
+      let page = null;
+
+      try {
+        if (
+          !window.BuildMindPdfOcr ||
+          !window.BuildMindPdfOcr.isAvailable()
+        ) {
+          throw new Error(
+            'OCR-библиотека не загрузилась.'
+          );
+        }
+
+        if (!ocrSession) {
+          notifyProjectDocumentAnalysisProgress(
+            documentItem,
+            {
+              stage: 'ocr-loading',
+              pageNumber,
+              totalPages:
+                pdfDocument.numPages,
+              message:
+                'Подключается OCR. Первый запуск может занять больше времени…'
+            }
+          );
+
+          ocrSession =
+            await window
+              .BuildMindPdfOcr
+              .createSession({
+                signal,
+                timeoutMs:
+                  pageTimeoutMs
+              });
+
+          throwIfProjectDocumentAnalysisCancelled(
+            signal
+          );
+        }
+
+        page =
+          await pdfDocument.getPage(
+            pageNumber
+          );
+
+        const recognition =
+          await ocrSession.recognizePage(
+            page,
+            pageNumber,
+            {
+              signal,
+              timeoutMs:
+                pageTimeoutMs,
+              onProgress(progress) {
+                const percent =
+                  Math.round(
+                    (
+                      Number(
+                        progress?.progress
+                      ) || 0
+                    ) * 100
+                  );
+
+                notifyProjectDocumentAnalysisProgress(
+                  documentItem,
+                  {
+                    stage: 'ocr',
+                    pageNumber,
+                    totalPages:
+                      pdfDocument.numPages,
+                    progress:
+                      percent,
+                    message:
+                      `OCR: страница ${pageNumber} ` +
+                      `из ${pdfDocument.numPages} · ` +
+                      `${percent}% · обработано ` +
+                      `${ocrIndex + 1} из ` +
+                      `${ocrAttemptedPages.length}`
+                  }
+                );
+              }
+            }
+          );
+
+        if (
+          recognition.meaningfulTextLength >= 20
+        ) {
+          pageResult.text =
+            recognition.text.slice(
+              0,
+              30000
+            );
+          pageResult.textLength =
+            recognition.text.length;
+          pageResult.truncated =
+            recognition.text.length > 30000;
+          pageResult.extractionMethod =
+            'ocr';
+          pageResult.ocrConfidence =
+            recognition.confidence;
+
+          ocrPages.push(pageNumber);
+        } else if (
+          pageResult.nativeMeaningfulLength < 20
+        ) {
+          ocrFailedPages.push(pageNumber);
+        }
+      } catch (ocrError) {
+        if (
+          isProjectDocumentAbortError(
+            ocrError
+          )
+        ) {
+          throw createProjectDocumentAbortError();
+        }
+
+        console.warn(
+          `OCR страницы ${pageNumber} не выполнен:`,
+          ocrError
+        );
+
+        if (
+          ocrError?.code ===
+          'OCR_PAGE_TIMEOUT'
+        ) {
+          const timedOutSession =
+            ocrSession;
+
+          ocrSession = null;
+
+          if (
+            timedOutSession &&
+            typeof timedOutSession.terminate ===
+              'function'
+          ) {
+            await timedOutSession.terminate();
+          }
+
+          notifyProjectDocumentAnalysisProgress(
+            documentItem,
+            {
+              stage: 'ocr-timeout',
+              pageNumber,
+              totalPages:
+                pdfDocument.numPages,
+              message:
+                `Страница ${pageNumber} пропущена: ` +
+                `OCR превысил ${Math.round(
+                  pageTimeoutMs / 1000
+                )} секунд. Анализ продолжается.`
+            }
+          );
+        } else {
+          ocrUnavailableReason =
+            ocrUnavailableReason ||
+            String(
+              ocrError?.message ||
+              'OCR недоступен.'
+            );
+        }
+
+        if (
+          pageResult.nativeMeaningfulLength < 20
+        ) {
+          ocrFailedPages.push(pageNumber);
+        }
+      } finally {
+        if (page) {
+          page.cleanup();
+        }
+      }
+
+      await yieldProjectDocumentAnalysis();
     }
+
+    pageAnalyses.forEach(
+      function (pageResult) {
+        const meaningfulTextLength =
+          getProjectDocumentMeaningfulLength(
+            pageResult.text
+          );
+
+        delete pageResult.requiresOcr;
+        delete pageResult.nativeMeaningfulLength;
+
+        if (meaningfulTextLength >= 20) {
+          pagesWithText += 1;
+          extractedPages.push(pageResult);
+        }
+      }
+    );
+
+    notifyProjectDocumentAnalysisProgress(
+      documentItem,
+      {
+        stage: 'classification',
+        pageNumber:
+          pdfDocument.numPages,
+        totalPages:
+          pdfDocument.numPages,
+        message:
+          'Текст прочитан. BuildMind формирует разделы и вопросы для проверки…'
+      }
+    );
 
     const fallbackClassification =
       classifyProjectDocument(
@@ -5294,6 +5500,12 @@ async function inspectPdfDocument(
     };
     
   } catch (error) {
+    if (
+      isProjectDocumentAbortError(error)
+    ) {
+      throw error;
+    }
+
     console.error(
       'Ошибка диагностики PDF:',
       error
@@ -5334,144 +5546,9 @@ async function inspectPdfDocument(
   }
 }
 
-async function analyzeSelectedPdfDocuments() {
-  const message =
-    document.getElementById(
-      'documentsMessage'
-    );
-
-  const analyzeButton =
-    document.getElementById(
-      'analyzePdfBtn'
-    );
-
-  if (!message || !analyzeButton) {
-    return;
-  }
-
-  const pdfDocuments =
-    uploadedProjectDocuments.filter(
-      function (documentItem) {
-        return (
-          getProjectDocumentExtension(
-            documentItem.file
-          ) === 'pdf'
-        );
-      }
-    );
-
-  if (pdfDocuments.length === 0) {
-    message.textContent =
-      'Сначала выберите хотя бы один PDF-файл.';
-
-    return;
-  }
-
-  if (!window.pdfjsLib) {
-    message.textContent =
-      'Библиотека PDF ещё загружается. ' +
-      'Проверьте подключение к интернету ' +
-      'и повторите через несколько секунд.';
-
-    return;
-  }
-
-  analyzeButton.disabled = true;
-
-  analyzeButton.textContent =
-    'Анализ PDF...';
-
-  message.textContent =
-    `Начинается проверка: ` +
-    `${getDocumentsCountText(
-      pdfDocuments.length
-    )}.`;
-
-  const results = [];
-
-  for (
-    let index = 0;
-    index < pdfDocuments.length;
-    index += 1
-  ) {
-    const documentItem =
-      pdfDocuments[index];
-    
-documentItem.status =
-  'analyzing';
-
-documentItem.analysis = null;
-
-renderProjectDocuments();
-    
-    message.textContent =
-      `Проверяется ${index + 1} из ` +
-      `${pdfDocuments.length}:\n` +
-      documentItem.file.name;
-
-    const result =
-  await inspectPdfDocument(
-    documentItem
-  );
-
-documentItem.analysis =
-  result;
-
-documentItem.status =
-  result.success
-    ? 'analyzed'
-    : 'error';
-
-results.push(result);
-
-renderProjectDocuments();
-  }
-
-  const resultLines =
-    results.map(function (result) {
-      if (!result.success) {
-        return (
-          `✗ ${result.fileName}\n` +
-          `  ${result.errorMessage}`
-        );
-      }
-
-      return (
-        `✓ ${result.fileName}\n` +
-        `  Страниц: ${result.totalPages}\n` +
-        `  ${result.pdfType}`
-      );
-    });
-
-  message.textContent =
-    'Анализ PDF завершён:\n\n' +
-    resultLines.join('\n\n');
-
-  analyzeButton.disabled = false;
-
-  analyzeButton.textContent =
-    'Анализировать PDF';
-}
-
-function initializePdfDiagnostics() {
-  const analyzeButton =
-    document.getElementById(
-      'analyzePdfBtn'
-    );
-
-  if (!analyzeButton) {
-    return;
-  }
-
-  analyzeButton.addEventListener(
-    'click',
-    analyzeSelectedPdfDocuments
-  );
-}
-
-initializePdfDiagnostics();
 async function analyzeProjectDocumentPdfForApi(
-  documentItem
+  documentItem,
+  options = {}
 ) {
   if (
     !documentItem ||
@@ -5493,10 +5570,26 @@ async function analyzeProjectDocumentPdfForApi(
 
   renderProjectDocuments();
 
-  const result =
-    await inspectPdfDocument(
-      documentItem
-    );
+  let result;
+
+  try {
+    result =
+      await inspectPdfDocument(
+        documentItem,
+        options
+      );
+  } catch (error) {
+    documentItem.status =
+      isProjectDocumentAbortError(error)
+        ? 'waiting'
+        : 'error';
+
+    documentItem.analysis = null;
+
+    renderProjectDocuments();
+
+    throw error;
+  }
 
   documentItem.analysis =
     result;
@@ -5543,6 +5636,10 @@ window.BuildMindProjectDocuments = {
 
   chooseFiles:
     function () {
+      if (projectDocumentsAnalysisBusy) {
+        return;
+      }
+
       document
         .getElementById(
           'projectDocumentsInput'
@@ -5552,6 +5649,14 @@ window.BuildMindProjectDocuments = {
 
   analyzePdfDocument:
     analyzeProjectDocumentPdfForApi,
+
+  setBusy:
+    function (value) {
+      projectDocumentsAnalysisBusy =
+        Boolean(value);
+
+      renderProjectDocuments();
+    },
 
   render:
     renderProjectDocuments

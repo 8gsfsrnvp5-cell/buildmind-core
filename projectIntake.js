@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.3
+   BUILDMIND PROJECT INTAKE — V1.4
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,10 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.3';
-
-const PROJECT_INTAKE_AUTO_DELAY =
-  350;
+  'project-intake-v1.4';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -86,8 +83,47 @@ let projectIntakeLastResult =
 let projectIntakeAnalysisInProgress =
   false;
 
-let projectIntakeAutoTimer =
+let projectIntakeAnalysisController =
   null;
+
+let projectIntakeCancelRequested =
+  false;
+
+function createProjectIntakeAbortError() {
+  const error = new Error(
+    'Анализ остановлен пользователем.'
+  );
+
+  error.name = 'AbortError';
+  error.code =
+    'PROJECT_INTAKE_ANALYSIS_CANCELLED';
+
+  return error;
+}
+
+function isProjectIntakeAbortError(
+  error
+) {
+  return Boolean(
+    error &&
+    (
+      error.name === 'AbortError' ||
+      error.code ===
+        'PROJECT_INTAKE_ANALYSIS_CANCELLED' ||
+      error.code ===
+        'PDF_ANALYSIS_CANCELLED' ||
+      error.code === 'OCR_CANCELLED'
+    )
+  );
+}
+
+function throwIfProjectIntakeCancelled(
+  signal
+) {
+  if (signal?.aborted) {
+    throw createProjectIntakeAbortError();
+  }
+}
 
 function intakeT(
   key
@@ -1138,8 +1174,13 @@ function extractProjectIntakeApprovals(
 }
 
 async function analyzeProjectIntakePdf(
-  documentItem
+  documentItem,
+  options = {}
 ) {
+  throwIfProjectIntakeCancelled(
+    options.signal
+  );
+
   const api =
     window.BuildMindProjectDocuments;
 
@@ -1156,7 +1197,8 @@ async function analyzeProjectIntakePdf(
     ) {
       await api
         .analyzePdfDocument(
-          documentItem
+          documentItem,
+          options
         );
     } else if (
       typeof inspectPdfDocument ===
@@ -1168,6 +1210,8 @@ async function analyzeProjectIntakePdf(
       documentItem.analysis =
         await inspectPdfDocument(
           documentItem
+          ,
+          options
         );
 
       documentItem.status =
@@ -1178,6 +1222,10 @@ async function analyzeProjectIntakePdf(
           : 'error';
     }
   }
+
+  throwIfProjectIntakeCancelled(
+    options.signal
+  );
 
   const compositeAnalysis =
     documentItem
@@ -1424,7 +1472,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АВТОМАТИЧЕСКИЙ АНАЛИЗ · V1.3
+          АНАЛИЗ КОМПЛЕКТА · V1.4
         </span>
 
         <h2>
@@ -1467,7 +1515,17 @@ function createProjectIntakeUi() {
             intakeT(
               'intake.analyze'
             )
-          )}
+            )}
+        </button>
+
+        <button
+          type="button"
+          id="projectIntakeCancelBtn"
+          class="project-intake-cancel-btn"
+          disabled
+          hidden
+        >
+          Остановить анализ
         </button>
       </div>
     </div>
@@ -2150,10 +2208,37 @@ function renderProjectIntake(
       'projectIntakeAnalyzeBtn'
     );
 
+  const selectButton =
+    document.getElementById(
+      'projectIntakeSelectBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
+    );
+
   if (analyzeButton) {
     analyzeButton.disabled =
       projectIntakeAnalysisInProgress ||
       documents.length === 0;
+  }
+
+  if (selectButton) {
+    selectButton.disabled =
+      projectIntakeAnalysisInProgress;
+  }
+
+  if (cancelButton) {
+    cancelButton.hidden =
+      !projectIntakeAnalysisInProgress;
+    cancelButton.disabled =
+      !projectIntakeAnalysisInProgress ||
+      projectIntakeCancelRequested;
+    cancelButton.textContent =
+      projectIntakeCancelRequested
+        ? 'Останавливаем…'
+        : 'Остановить анализ';
   }
 
   if (!result) {
@@ -2306,8 +2391,36 @@ async function runBuildMindProjectIntake() {
       'projectIntakeAnalyzeBtn'
     );
 
+  const selectButton =
+    document.getElementById(
+      'projectIntakeSelectBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
+    );
+
+  const analysisController =
+    new AbortController();
+
+  projectIntakeAnalysisController =
+    analysisController;
+
+  projectIntakeCancelRequested =
+    false;
+
   projectIntakeAnalysisInProgress =
     true;
+
+  if (
+    window.BuildMindProjectDocuments &&
+    typeof window.BuildMindProjectDocuments
+      .setBusy === 'function'
+  ) {
+    window.BuildMindProjectDocuments
+      .setBusy(true);
+  }
 
   if (analyzeButton) {
     analyzeButton.disabled =
@@ -2315,6 +2428,17 @@ async function runBuildMindProjectIntake() {
 
     analyzeButton.textContent =
       'Анализ…';
+  }
+
+  if (selectButton) {
+    selectButton.disabled = true;
+  }
+
+  if (cancelButton) {
+    cancelButton.hidden = false;
+    cancelButton.disabled = false;
+    cancelButton.textContent =
+      'Остановить анализ';
   }
 
   setProjectIntakeText(
@@ -2379,6 +2503,10 @@ async function runBuildMindProjectIntake() {
         documents.length;
       index += 1
     ) {
+      throwIfProjectIntakeCancelled(
+        analysisController.signal
+      );
+
       const documentItem =
         documents[
           index
@@ -2408,7 +2536,11 @@ async function runBuildMindProjectIntake() {
       ) {
         analyzed =
           await analyzeProjectIntakePdf(
-            documentItem
+            documentItem,
+            {
+              signal:
+                analysisController.signal
+            }
           );
       } else if (
         [
@@ -2449,6 +2581,10 @@ async function runBuildMindProjectIntake() {
             []
         };
       }
+
+      throwIfProjectIntakeCancelled(
+        analysisController.signal
+      );
 
       const classification =
         analyzed
@@ -2809,6 +2945,20 @@ async function runBuildMindProjectIntake() {
 
     return result;
   } catch (error) {
+    if (isProjectIntakeAbortError(error)) {
+      setProjectIntakeText(
+        'projectIntakeStatus',
+        'Анализ остановлен. Загруженные документы сохранены в текущей вкладке — можно запустить анализ повторно.'
+      );
+
+      return {
+        success: false,
+        cancelled: true,
+        errorCode:
+          'PROJECT_INTAKE_ANALYSIS_CANCELLED'
+      };
+    }
+
     console.error(
       'BuildMind Project Intake: ошибка анализа:',
       error
@@ -2833,6 +2983,26 @@ async function runBuildMindProjectIntake() {
     projectIntakeAnalysisInProgress =
       false;
 
+    projectIntakeCancelRequested =
+      false;
+
+    if (
+      projectIntakeAnalysisController ===
+      analysisController
+    ) {
+      projectIntakeAnalysisController =
+        null;
+    }
+
+    if (
+      window.BuildMindProjectDocuments &&
+      typeof window.BuildMindProjectDocuments
+        .setBusy === 'function'
+    ) {
+      window.BuildMindProjectDocuments
+        .setBusy(false);
+    }
+
     if (analyzeButton) {
       analyzeButton.disabled =
         getProjectIntakeDocuments()
@@ -2843,20 +3013,25 @@ async function runBuildMindProjectIntake() {
           'intake.analyze'
         );
     }
+
+    if (selectButton) {
+      selectButton.disabled = false;
+    }
+
+    if (cancelButton) {
+      cancelButton.hidden = true;
+      cancelButton.disabled = true;
+      cancelButton.textContent =
+        'Остановить анализ';
+    }
   }
 }
 
-function queueProjectIntakeAutoAnalysis() {
-  if (
-    projectIntakeAutoTimer
-  ) {
-    clearTimeout(
-      projectIntakeAutoTimer
-    );
-  }
-
+function handleProjectIntakeDocumentsChanged() {
   const documents =
     getProjectIntakeDocuments();
+
+  projectIntakeLastResult = null;
 
   renderProjectIntake(
     null
@@ -2865,17 +3040,49 @@ function queueProjectIntakeAutoAnalysis() {
   if (
     documents.length === 0
   ) {
-    projectIntakeLastResult =
-      null;
+    setProjectIntakeText(
+      'projectIntakeStatus',
+      intakeT('intake.empty')
+    );
 
     return;
   }
 
-  projectIntakeAutoTimer =
-    setTimeout(
-      runBuildMindProjectIntake,
-      PROJECT_INTAKE_AUTO_DELAY
+  setProjectIntakeText(
+    'projectIntakeStatus',
+    `Загружено документов: ${documents.length}. ` +
+      'Нажмите «Анализировать комплект». Анализ не запускается автоматически.'
+  );
+}
+
+function cancelBuildMindProjectIntake() {
+  if (
+    !projectIntakeAnalysisInProgress ||
+    !projectIntakeAnalysisController ||
+    projectIntakeCancelRequested
+  ) {
+    return;
+  }
+
+  projectIntakeCancelRequested = true;
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
     );
+
+  if (cancelButton) {
+    cancelButton.disabled = true;
+    cancelButton.textContent =
+      'Останавливаем…';
+  }
+
+  setProjectIntakeText(
+    'projectIntakeStatus',
+    'Останавливаем анализ и освобождаем ресурсы браузера…'
+  );
+
+  projectIntakeAnalysisController.abort();
 }
 
 function bindProjectIntakeControls() {
@@ -2887,6 +3094,11 @@ function bindProjectIntakeControls() {
   const analyzeButton =
     document.getElementById(
       'projectIntakeAnalyzeBtn'
+    );
+
+  const cancelButton =
+    document.getElementById(
+      'projectIntakeCancelBtn'
     );
 
   if (selectButton) {
@@ -2921,6 +3133,13 @@ function bindProjectIntakeControls() {
       runBuildMindProjectIntake
     );
   }
+
+  if (cancelButton) {
+    cancelButton.addEventListener(
+      'click',
+      cancelBuildMindProjectIntake
+    );
+  }
 }
 
 function initializeBuildMindProjectIntake() {
@@ -2930,7 +3149,7 @@ function initializeBuildMindProjectIntake() {
 
   window.addEventListener(
     'buildmind:project-documents-changed',
-    queueProjectIntakeAutoAnalysis
+    handleProjectIntakeDocumentsChanged
   );
 
   window.addEventListener(

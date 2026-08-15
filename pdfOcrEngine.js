@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF OCR ENGINE — V1
+   BUILDMIND PDF OCR ENGINE — V1.1
 
    OCR выполняется локально в браузере. Файл не отправляется
    в BuildMind или на прикладной сервер. PDF.js сначала
@@ -10,7 +10,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_OCR_VERSION =
-  'pdf-ocr-v1';
+  'pdf-ocr-v1.1';
 
 const PDF_OCR_DEFAULT_MIN_TEXT_LENGTH =
   60;
@@ -20,6 +20,141 @@ const PDF_OCR_DEFAULT_SCALE =
 
 const PDF_OCR_MAX_PIXELS =
   7000000;
+
+const PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS =
+  90000;
+
+function createPdfOcrControlError(
+  message,
+  code
+) {
+  const error = new Error(message);
+
+  error.name =
+    code === 'OCR_CANCELLED'
+      ? 'AbortError'
+      : 'TimeoutError';
+
+  error.code = code;
+
+  return error;
+}
+
+function runPdfOcrControlledOperation(
+  operation,
+  options = {}
+) {
+  const signal = options.signal || null;
+  const timeoutMs = Math.max(
+    1000,
+    Number(options.timeoutMs) ||
+      PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS
+  );
+
+  return new Promise(function (
+    resolve,
+    reject
+  ) {
+    let settled = false;
+    let timeoutId = null;
+
+    const finish = function (
+      handler,
+      value
+    ) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      if (
+        signal &&
+        typeof signal.removeEventListener ===
+          'function'
+      ) {
+        signal.removeEventListener(
+          'abort',
+          handleAbort
+        );
+      }
+
+      handler(value);
+    };
+
+    const interrupt = function () {
+      if (
+        typeof options.onInterrupt ===
+        'function'
+      ) {
+        Promise.resolve(
+          options.onInterrupt()
+        ).catch(function () {});
+      }
+    };
+
+    const handleAbort = function () {
+      interrupt();
+
+      finish(
+        reject,
+        createPdfOcrControlError(
+          'Анализ остановлен пользователем.',
+          'OCR_CANCELLED'
+        )
+      );
+    };
+
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+
+    if (
+      signal &&
+      typeof signal.addEventListener ===
+        'function'
+    ) {
+      signal.addEventListener(
+        'abort',
+        handleAbort,
+        {
+          once: true
+        }
+      );
+    }
+
+    timeoutId = setTimeout(
+      function () {
+        interrupt();
+
+        finish(
+          reject,
+          createPdfOcrControlError(
+            options.timeoutMessage ||
+              'OCR страницы превысил допустимое время.',
+            options.timeoutCode ||
+              'OCR_PAGE_TIMEOUT'
+          )
+        );
+      },
+      timeoutMs
+    );
+
+    Promise.resolve(operation).then(
+      function (value) {
+        finish(resolve, value);
+      },
+      function (error) {
+        finish(reject, error);
+      }
+    );
+  });
+}
 
 function normalizePdfOcrText(value) {
   return String(value || '')
@@ -106,8 +241,11 @@ async function createPdfOcrSession(
   let activePageNumber = null;
   let activeProgress = null;
 
-  const worker =
-    await window.Tesseract.createWorker(
+  let pendingWorker = null;
+
+  const workerPromise =
+    Promise.resolve(
+      window.Tesseract.createWorker(
       [
         'rus',
         'eng'
@@ -134,9 +272,72 @@ async function createPdfOcrSession(
           });
         }
       }
-    );
+      )
+    ).then(function (createdWorker) {
+      pendingWorker = createdWorker;
+      return createdWorker;
+    });
+
+  let worker;
+
+  try {
+    worker =
+      await runPdfOcrControlledOperation(
+        workerPromise,
+        {
+          signal:
+            options.signal || null,
+          timeoutMs:
+            options.initializationTimeoutMs ||
+            Math.max(
+              PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
+              Number(options.timeoutMs) || 0
+            ),
+          timeoutCode:
+            'OCR_INITIALIZATION_TIMEOUT',
+          timeoutMessage:
+            'Подключение OCR превысило допустимое время.',
+          onInterrupt() {
+            if (
+              pendingWorker &&
+              typeof pendingWorker.terminate ===
+                'function'
+            ) {
+              return pendingWorker.terminate();
+            }
+
+            return null;
+          }
+        }
+      );
+  } catch (error) {
+    workerPromise.then(
+      function (createdWorker) {
+        return createdWorker.terminate();
+      },
+      function () {}
+    ).catch(function () {});
+
+    throw error;
+  }
 
   let terminated = false;
+  let terminationPromise = null;
+
+  function terminateWorker() {
+    if (terminationPromise) {
+      return terminationPromise;
+    }
+
+    terminated = true;
+
+    terminationPromise =
+      Promise.resolve(
+        worker.terminate()
+      ).catch(function () {});
+
+    return terminationPromise;
+  }
 
   return {
     async recognizePage(
@@ -216,10 +417,32 @@ async function createPdfOcrSession(
         canvas.height
       );
 
-      await pdfPage.render({
+      const renderTask = pdfPage.render({
         canvasContext: context,
         viewport
-      }).promise;
+      });
+
+      await runPdfOcrControlledOperation(
+        renderTask.promise,
+        {
+          signal:
+            recognitionOptions.signal ||
+            options.signal ||
+            null,
+          timeoutMs:
+            recognitionOptions.timeoutMs ||
+            options.timeoutMs ||
+            PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
+          onInterrupt() {
+            if (
+              typeof renderTask.cancel ===
+              'function'
+            ) {
+              renderTask.cancel();
+            }
+          }
+        }
+      );
 
       activePageNumber =
         Number(pageNumber) || null;
@@ -230,8 +453,22 @@ async function createPdfOcrSession(
 
       try {
         const recognition =
-          await worker.recognize(
-            canvas
+          await runPdfOcrControlledOperation(
+            worker.recognize(
+              canvas
+            ),
+            {
+              signal:
+                recognitionOptions.signal ||
+                options.signal ||
+                null,
+              timeoutMs:
+                recognitionOptions.timeoutMs ||
+                options.timeoutMs ||
+                PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
+              onInterrupt:
+                terminateWorker
+            }
           );
 
         const text =
@@ -272,12 +509,7 @@ async function createPdfOcrSession(
     },
 
     async terminate() {
-      if (terminated) {
-        return;
-      }
-
-      terminated = true;
-      await worker.terminate();
+      await terminateWorker();
     }
   };
 }
@@ -287,6 +519,8 @@ const BuildMindPdfOcrApi = {
     BUILDMIND_PDF_OCR_VERSION,
   minimumTextLength:
     PDF_OCR_DEFAULT_MIN_TEXT_LENGTH,
+  defaultPageTimeoutMs:
+    PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
   isAvailable:
     isPdfOcrAvailable,
   normalizeText:
@@ -297,6 +531,8 @@ const BuildMindPdfOcrApi = {
     shouldRecognizePdfPage,
   getRenderScale:
     getPdfOcrRenderScale,
+  runControlledOperation:
+    runPdfOcrControlledOperation,
   createSession:
     createPdfOcrSession
 };
