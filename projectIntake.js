@@ -1742,6 +1742,9 @@ function renderProjectIntakeDocumentList(
                               section.scheduleStatus ===
                                 'expired'
                                 ? ' · срок графика прошёл'
+                                : section.scheduleStatus ===
+                                    'review'
+                                  ? ' · даты требуют проверки'
                                 : ''
                             )
                           : '';
@@ -1925,6 +1928,67 @@ function renderProjectIntakeReviewList(
 
           if (
             item.reviewType ===
+            'schedule-date-validation'
+          ) {
+            const pageRange =
+              item.startPage ===
+                item.endPage
+                ? `стр. ${item.startPage}`
+                : `стр. ${item.startPage}–${item.endPage}`;
+
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Проверка дат ГПР
+                </span>
+
+                <strong>
+                  Найдены сомнительные даты после OCR
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )} ·
+                  ${escapeProjectIntakeHtml(
+                    pageRange
+                  )}
+                </p>
+
+                <small>
+                  Принятые даты:
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.acceptedDateValues
+                    ) &&
+                    item.acceptedDateValues.length > 0
+                      ? item.acceptedDateValues.join(', ')
+                      : '—'
+                  )}.
+                  Отклонённые значения:
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.rejectedDateValues
+                    ) &&
+                    item.rejectedDateValues.length > 0
+                      ? item.rejectedDateValues.join(', ')
+                      : '—'
+                  )}.
+                </small>
+
+                <p class="project-intake-review-hint">
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(item.reasons)
+                      ? item.reasons.join(' ')
+                      : 'Инженеру необходимо проверить даты по исходной странице.'
+                  )}
+                </p>
+              </article>
+            `;
+          }
+
+          if (
+            item.reviewType ===
             'ocr-gap'
           ) {
             return `
@@ -2086,8 +2150,15 @@ function renderProjectIntakeReviewList(
                 </blockquote>
 
                 <p class="project-intake-review-hint">
-                  По тексту документа выявлен признак внешней зависимости.
-                  Рекомендуется проверить наличие и статус соответствующего согласования.
+                  ${
+                    item.intent ===
+                      'contractual-requirement'
+                      ? 'Это требование документа, а не подтверждение выполненного согласования.'
+                      : item.intent ===
+                          'completed'
+                        ? 'В документе указано, что согласование выполнено. Рекомендуется проверить подтверждающий документ и актуальность.'
+                        : 'По тексту документа выявлен признак внешней зависимости. Рекомендуется проверить наличие и статус соответствующего согласования.'
+                  }
                 </p>
               </article>
             `;
@@ -2725,6 +2796,42 @@ async function runBuildMindProjectIntake() {
                   ?.endDate || null,
               analysisDate:
                 section.analysisDate || null
+            });
+          }
+        );
+
+      sections
+        .filter(
+          function (section) {
+            return (
+              section.kind ===
+                'schedule' &&
+              section
+                .dateValidation
+                ?.status ===
+                'review'
+            );
+          }
+        )
+        .forEach(
+          function (section) {
+            result.reviewItems.push({
+              reviewType:
+                'schedule-date-validation',
+              fileName:
+                documentItem.file.name,
+              startPage:
+                section.startPage,
+              endPage:
+                section.endPage,
+              acceptedDateValues:
+                section.dateValues || [],
+              rejectedDateValues:
+                section.rejectedDateValues || [],
+              reasons:
+                section
+                  .dateValidation
+                  ?.reasons || []
             });
           }
         );

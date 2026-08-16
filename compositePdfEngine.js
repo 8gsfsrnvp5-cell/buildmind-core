@@ -15,7 +15,16 @@
    ================================================== */
 
 const BUILDMIND_COMPOSITE_PDF_VERSION =
-  'composite-pdf-v1';
+  'composite-pdf-v1.1';
+
+const COMPOSITE_PDF_MIN_PROJECT_YEAR =
+  2000;
+
+const COMPOSITE_PDF_MAX_FUTURE_YEARS =
+  25;
+
+const COMPOSITE_PDF_MAX_SCHEDULE_SPAN_YEARS =
+  15;
 
 const COMPOSITE_PDF_KIND_LABELS = {
   agreement:
@@ -101,6 +110,7 @@ const COMPOSITE_PDF_RULES = [
     title: [
       /коммерческ[а-я]*\s+предложени[а-я]*/,
       /технико-коммерческ[а-я]*\s+предложени[а-я]*/,
+      /ведомост[а-я]*\s+(?:объем|объ[её]м|обьем)[а-я]*\s+и\s+стоимост[а-я]*\s+работ[а-я]*/,
       /ведомост[а-я]*\s+договорн[а-я]*\s+цен[а-я]*/,
       /договорн[а-я]*\s+цен[а-я]*/,
       /ценов[а-я]*\s+предложени[а-я]*/
@@ -365,17 +375,190 @@ function collectCompositePdfMatches(patterns, text) {
     });
 }
 
+function getCompositePdfScheduleSignals(
+  text,
+  structuralBonuses = {}
+) {
+  const normalized =
+    normalizeCompositePdfText(text);
+
+  const hasScheduleName =
+    /график[а-я]*\s+производств[а-я]*\s+работ[а-я]*|календарн[а-я]*\s+(?:график|план)[а-я]*|(^|[^а-яa-z0-9])гпр([^а-яa-z0-9]|$)/
+      .test(normalized);
+
+  const hasStartColumn =
+    /(^|\s)(?:начало|дата\s+начала)(\s|$)/
+      .test(normalized);
+
+  const hasFinishColumn =
+    /(^|\s)(?:окончание|дата\s+окончания)(\s|$)/
+      .test(normalized);
+
+  const hasScheduleStructure =
+    Number(
+      structuralBonuses.schedule
+    ) > 0 ||
+    (
+      hasStartColumn &&
+      hasFinishColumn &&
+      /наименовани[а-я]*\s+работ[а-я]*|продолжительност[а-я]*/
+        .test(normalized)
+    );
+
+  const clauseMatches =
+    normalized.match(
+      /(^|\s)\d{1,2}\.\d{1,2}\.?\s/g
+    ) || [];
+
+  const hasContractLanguage =
+    (
+      /заказчик|подрядчик|сторон[а-я]*/
+        .test(normalized) &&
+      /обязан[а-я]*|обязу[а-я]*|должен|представить|предоставить|разработать|согласовать|утвердить|согласно|в\s+соответствии\s+с/
+        .test(normalized)
+    ) ||
+    clauseMatches.length >= 3;
+
+  return {
+    hasScheduleName,
+    hasScheduleStructure,
+    referenceOnly:
+      hasScheduleName &&
+      hasContractLanguage &&
+      !hasScheduleStructure
+  };
+}
+
+function validateCompositePdfSectionDates(
+  values,
+  analysisDate,
+  kind
+) {
+  const allValues =
+    Array.from(
+      new Set(
+        Array.isArray(values)
+          ? values
+          : []
+      )
+    ).sort();
+
+  if (kind !== 'schedule') {
+    return {
+      status: 'valid',
+      acceptedValues: allValues,
+      rejectedValues: [],
+      reasons: []
+    };
+  }
+
+  const analysisYear =
+    Number(
+      String(analysisDate || '')
+        .slice(0, 4)
+    );
+
+  const maximumYear =
+    (
+      Number.isFinite(analysisYear)
+        ? analysisYear
+        : new Date().getUTCFullYear()
+    ) +
+    COMPOSITE_PDF_MAX_FUTURE_YEARS;
+
+  const acceptedValues = [];
+  const rejectedValues = [];
+
+  allValues.forEach(function (value) {
+    const year =
+      Number(
+        String(value).slice(0, 4)
+      );
+
+    if (
+      year <
+        COMPOSITE_PDF_MIN_PROJECT_YEAR ||
+      year > maximumYear
+    ) {
+      rejectedValues.push(value);
+      return;
+    }
+
+    acceptedValues.push(value);
+  });
+
+  const reasons = [];
+
+  if (rejectedValues.length > 0) {
+    reasons.push(
+      'Найдены даты с неправдоподобным годом — возможно, ошибка OCR.'
+    );
+  }
+
+  if (acceptedValues.length === 1) {
+    reasons.push(
+      'Для диапазона ГПР найдена только одна подтверждаемая дата.'
+    );
+  }
+
+  if (acceptedValues.length >= 2) {
+    const first =
+      new Date(
+        `${acceptedValues[0]}T00:00:00Z`
+      );
+    const last =
+      new Date(
+        `${acceptedValues[acceptedValues.length - 1]}T00:00:00Z`
+      );
+    const spanDays =
+      Math.round(
+        (
+          last.getTime() -
+          first.getTime()
+        ) /
+          86400000
+      );
+
+    if (
+      spanDays >
+        COMPOSITE_PDF_MAX_SCHEDULE_SPAN_YEARS *
+          366
+    ) {
+      reasons.push(
+        'Диапазон ГПР превышает 15 лет — требуется проверить распознанные годы.'
+      );
+    }
+  }
+
+  return {
+    status:
+      reasons.length > 0
+        ? 'review'
+        : 'valid',
+    acceptedValues,
+    rejectedValues,
+    reasons
+  };
+}
+
 function isCompositePdfContentsPage(text) {
   const normalized =
     normalizeCompositePdfText(text);
 
   const hasContentsHeading =
     /(^|\n)\s*(содержание|оглавление|перечень\s+приложений)\s*($|\n)/
+      .test(normalized) ||
+    /(^|[^а-яa-z0-9])(?:перечень\s+приложений|приложения\s+к\s+(?:настоящему\s+)?договору)(?=$|[^а-яa-z0-9])/
       .test(normalized);
 
   if (!hasContentsHeading) {
     return false;
   }
+
+  const appendixEntries =
+    normalized.match(
+      /приложени[а-я]*\s*№\s*\d+/g
+    ) || [];
 
   const mentionedKinds =
     COMPOSITE_PDF_RULES.filter(
@@ -391,7 +574,10 @@ function isCompositePdfContentsPage(text) {
       }
     ).length;
 
-  return mentionedKinds >= 2;
+  return (
+    mentionedKinds >= 2 ||
+    appendixEntries.length >= 2
+  );
 }
 
 function getCompositePdfStructuralBonuses(text) {
@@ -506,6 +692,12 @@ function classifyCompositePdfPage(page) {
   const bonuses =
     getCompositePdfStructuralBonuses(rawText);
 
+  const scheduleSignals =
+    getCompositePdfScheduleSignals(
+      rawText,
+      bonuses
+    );
+
   const results =
     COMPOSITE_PDF_RULES.map(
       function (rule) {
@@ -546,6 +738,15 @@ function classifyCompositePdfPage(page) {
           strong.length * 5 +
           weak.length * 2 +
           structuralBonus;
+
+        const scheduleReferenceOnly =
+          rule.kind === 'schedule' &&
+          scheduleSignals.referenceOnly;
+
+        if (scheduleReferenceOnly) {
+          score =
+            Math.min(score, 5);
+        }
 
         if (contentsPage) {
           score =
@@ -590,6 +791,7 @@ function classifyCompositePdfPage(page) {
           score,
           anchor:
             !contentsPage &&
+            !scheduleReferenceOnly &&
             (
               titleLead.length > 0 ||
               score >= 16
@@ -890,10 +1092,15 @@ function createCompositePdfSections(
       confidence = 'medium';
     }
 
+    const dateValidation =
+      validateCompositePdfSectionDates(
+        section.dateValues,
+        currentDate,
+        section.kind
+      );
+
     const dates =
-      Array.from(
-        new Set(section.dateValues)
-      ).sort();
+      dateValidation.acceptedValues;
 
     const dateRange =
       dates.length > 0
@@ -913,6 +1120,11 @@ function createCompositePdfSections(
       dateRange
     ) {
       if (
+        dateValidation.status ===
+        'review'
+      ) {
+        scheduleStatus = 'review';
+      } else if (
         dateRange.endDate <
         currentDate
       ) {
@@ -939,6 +1151,9 @@ function createCompositePdfSections(
           new Set(section.extractionMethods)
         ),
       dateValues: dates,
+      rejectedDateValues:
+        dateValidation.rejectedValues,
+      dateValidation,
       dateRange,
       scheduleStatus,
       analysisDate:

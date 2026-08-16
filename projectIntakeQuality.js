@@ -5,7 +5,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.2';
+  'project-intake-quality-v1.3';
 
 const PROJECT_INTAKE_QUALITY_KIND_RULES = [
   {
@@ -149,7 +149,13 @@ const PROJECT_INTAKE_QUALITY_APPROVAL_INTENT_LABELS = {
     'Требуется действие',
 
   conditional:
-    'Условное согласование'
+    'Условное согласование',
+
+  'contractual-requirement':
+    'Требование документа — выполнение не подтверждено',
+
+  completed:
+    'В документе указано как выполненное'
 };
 
 const PROJECT_INTAKE_QUALITY_APPROVAL_PRIORITY_LABELS = {
@@ -209,6 +215,57 @@ function countProjectIntakeQualityMatches(
   );
 }
 
+function isProjectIntakeQualityScheduleReferenceOnly(
+  fileText,
+  bodyText
+) {
+  const fileSource =
+    normalizeProjectIntakeQualityText(
+      fileText
+    );
+  const bodySource =
+    normalizeProjectIntakeQualityText(
+      bodyText
+    );
+
+  const fileIsSchedule =
+    /график\s+производств[а-яё]*\s+работ[а-яё]*|календарн[а-яё]*\s+(?:график|план)[а-яё]*|(^|[^а-яa-z0-9])гпр([^а-яa-z0-9]|$)/
+      .test(fileSource);
+
+  const hasScheduleName =
+    /график\s+производств[а-яё]*\s+работ[а-яё]*|календарн[а-яё]*\s+(?:график|план)[а-яё]*|(^|[^а-яa-z0-9])гпр([^а-яa-z0-9]|$)/
+      .test(bodySource);
+
+  const hasScheduleStructure =
+    /наименовани[а-яё]*\s+работ[а-яё]*/
+      .test(bodySource) &&
+    /(?:начало|дата\s+начала)/
+      .test(bodySource) &&
+    /(?:окончание|дата\s+окончания)/
+      .test(bodySource);
+
+  const clauseMatches =
+    bodySource.match(
+      /(^|\s)\d{1,2}\.\d{1,2}\.?\s/g
+    ) || [];
+
+  const hasContractLanguage =
+    (
+      /договор|заказчик|подрядчик|сторон[а-яё]*/
+        .test(bodySource) &&
+      /обязан[а-яё]*|обязу[а-яё]*|должен|представить|предоставить|разработать|согласовать|утвердить|согласно|в\s+соответствии\s+с/
+        .test(bodySource)
+    ) ||
+    clauseMatches.length >= 3;
+
+  return (
+    hasScheduleName &&
+    hasContractLanguage &&
+    !hasScheduleStructure &&
+    !fileIsSchedule
+  );
+}
+
 function classifyProjectIntakeQualitySignals(
   fileName,
   text
@@ -227,6 +284,12 @@ function classifyProjectIntakeQualitySignals(
     bodyText.slice(
       0,
       2000
+    );
+
+  const scheduleReferenceOnly =
+    isProjectIntakeQualityScheduleReferenceOnly(
+      fileText,
+      bodyText
     );
 
   const results =
@@ -283,26 +346,44 @@ function classifyProjectIntakeQualitySignals(
             strongLead * 14 +
             weakLead * 4;
 
+          const suppressSchedule =
+            rule.kind === 'schedule' &&
+            scheduleReferenceOnly &&
+            strongFile === 0;
+
+          const adjustedTextScore =
+            suppressSchedule
+              ? 0
+              : textScore;
+
+          const adjustedLeadScore =
+            suppressSchedule
+              ? 0
+              : leadScore;
+
           return {
             kind:
               rule.kind,
 
             fileScore,
 
-            textScore,
+            textScore:
+              adjustedTextScore,
 
-            leadScore,
+            leadScore:
+              adjustedLeadScore,
 
             score:
               fileScore +
-              textScore +
-              leadScore,
+              adjustedTextScore +
+              adjustedLeadScore,
 
             strongFileSignal:
               strongFile > 0,
 
             strongLeadSignal:
-              strongLead > 0
+              strongLead > 0 &&
+              !suppressSchedule
           };
         }
       )
@@ -981,6 +1062,43 @@ function getProjectIntakeQualityApprovalIntent(
   }
 
   if (
+    /обязан[а-яё]*|обязу[а-яё]*|должен|необходимо|требуется|следует|подлежит/.test(
+      text
+    ) &&
+    /согласован[а-яё]*|согласовать|согласование|разрешени[а-яё]*|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|техническ[а-яё]*\s+услови[а-яё]*|уведомить|уведомлени[а-яё]*/.test(
+      text
+    )
+  ) {
+    return {
+      intent:
+        'contractual-requirement',
+
+      priority:
+        'medium',
+
+      requiresReview:
+        true
+    };
+  }
+
+  if (
+    /(?:согласован(?:о|а|ы)?|утвержден(?:о|а|ы)?)(?=[^а-яё]|$)(?:\s+(?:заказчик[а-яё]*|подрядчик[а-яё]*|сторон[а-яё]*|проектн[а-яё]*\s+организац[а-яё]*))?|(?:разрешени[а-яё]*|допуск(?:а|у|ом|е|и)?|ордер(?:а|у|ом|е|ы|ов)?|уведомлени[а-яё]*|техническ[а-яё]*\s+услови[а-яё]*).{0,120}(?:получен[а-яё]*|выдан[а-яё]*|направлен[а-яё]*|согласован[а-яё]*|утвержден[а-яё]*)/.test(
+      text
+    )
+  ) {
+    return {
+      intent:
+        'completed',
+
+      priority:
+        'low',
+
+      requiresReview:
+        true
+    };
+  }
+
+  if (
     /согласовать|необходимо\s+согласован|следует\s+согласован|требуется\s+согласован|разрешени[а-яё]*|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|вызов[а-яё]*\s+представител[а-яё]*|уведомить/.test(
       text
     )
@@ -1007,6 +1125,30 @@ function getProjectIntakeQualityApprovalIntent(
     requiresReview:
       false
   };
+}
+
+function isProjectIntakeQualityInternalContractApproval(
+  context
+) {
+  const text =
+    normalizeProjectIntakeQualityText(
+      context
+    );
+
+  const internalContractObject =
+    /услови[а-яё]*\s+(?:настоящ[а-яё]*\s+)?договор[а-яё]*|текст\s+договор[а-яё]*|редакци[а-яё]*\s+договор[а-яё]*|настоящ[а-яё]*\s+договор[а-яё]*/
+      .test(text);
+
+  const hasTechnicalObject =
+    /гпр|график[а-яё]*\s+производств[а-яё]*\s+работ[а-яё]*|проектн[а-яё]*\s+документац[а-яё]*|схем[а-яё]*|материал[а-яё]*|технолог[а-яё]*|разрешени[а-яё]*|допуск[а-яё]*/
+      .test(text);
+
+  return (
+    internalContractObject &&
+    /сторон[а-яё]*|заказчик[а-яё]*|подрядчик[а-яё]*/
+      .test(text) &&
+    !hasTechnicalObject
+  );
 }
 
 function getProjectIntakeQualityApprovalSignature(
@@ -1210,7 +1352,7 @@ function extractProjectIntakeQualityApprovals(
   }
 
   const actionPattern =
-    /(согласован[а-яё]*|согласовать|согласование|разрешени[а-яё]*|техническ[а-яё]*\s+услови[а-яё]*|технадзор|техническ[а-яё]*\s+надзор|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|вызов[а-яё]*\s+представител[а-яё]*|уведомить|уведомлени[а-яё]*)/giu;
+    /(согласован[а-яё]*|согласовать|согласование|утвержден[а-яё]*|разрешени[а-яё]*|техническ[а-яё]*\s+услови[а-яё]*|технадзор|техническ[а-яё]*\s+надзор|допуск(?:а|у|ом|е|и)?(?=[^а-яё]|$)|ордер(?:а|у|ом|е|ы|ов)?(?=[^а-яё]|$)|вызов[а-яё]*\s+представител[а-яё]*|уведомить|уведомлени[а-яё]*)/giu;
 
   const candidates = [];
 
@@ -1277,6 +1419,9 @@ function extractProjectIntakeQualityApprovals(
           context.length < 20 ||
           isProjectIntakeQualityStampContext(
             wideContext
+          ) ||
+          isProjectIntakeQualityInternalContractApproval(
+            context
           )
         ) {
           continue;
