@@ -26,6 +26,12 @@ async function run() {
     7
   );
 
+  assert.ok(
+    pdfOcr.defaultInitializationTimeoutMs >=
+      300000,
+    'Первому подключению OCR нужно отдельное увеличенное время.'
+  );
+
   const limitedScale =
     pdfOcr.getRenderScale(
       5000,

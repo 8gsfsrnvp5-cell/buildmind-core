@@ -4987,6 +4987,9 @@ function getProjectDocumentCompositeClassification(
 const PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS =
   90000;
 
+const PROJECT_DOCUMENT_OCR_INITIALIZATION_TIMEOUT_MS =
+  300000;
+
 function createProjectDocumentAbortError() {
   const error = new Error(
     'Анализ остановлен пользователем.'
@@ -5237,7 +5240,7 @@ async function inspectPdfDocument(
               totalPages:
                 pdfDocument.numPages,
               message:
-                'Подключается OCR. Первый запуск может занять больше времени…'
+                'Подключается OCR. Первый запуск может занять до 5 минут…'
             }
           );
 
@@ -5247,7 +5250,9 @@ async function inspectPdfDocument(
               .createSession({
                 signal,
                 timeoutMs:
-                  pageTimeoutMs
+                  pageTimeoutMs,
+                initializationTimeoutMs:
+                  PROJECT_DOCUMENT_OCR_INITIALIZATION_TIMEOUT_MS
               });
 
           throwIfProjectDocumentAnalysisCancelled(
@@ -5370,9 +5375,14 @@ async function inspectPdfDocument(
         } else {
           ocrUnavailableReason =
             ocrUnavailableReason ||
-            String(
-              ocrError?.message ||
-              'OCR недоступен.'
+            (
+              ocrError?.code ===
+                'OCR_INITIALIZATION_TIMEOUT'
+                ? 'Первое подключение OCR не завершилось за 5 минут. Проверьте интернет и запустите анализ повторно — загруженный файл можно не удалять.'
+                : String(
+                    ocrError?.message ||
+                    'OCR недоступен.'
+                  )
             );
         }
 
@@ -5490,6 +5500,13 @@ async function inspectPdfDocument(
           new Set(ocrFailedPages)
         ),
       ocrUnavailableReason,
+      analysisStatus:
+        ocrUnavailableReason &&
+        pagesWithText === 0
+          ? 'ocr-unavailable'
+          : ocrFailedPages.length > 0
+            ? 'partial'
+            : 'complete',
       nativePdfType,
       pdfType:
         ocrPages.length > 0

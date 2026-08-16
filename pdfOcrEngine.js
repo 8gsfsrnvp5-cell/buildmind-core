@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF OCR ENGINE — V1.1
+   BUILDMIND PDF OCR ENGINE — V1.2
 
    OCR выполняется локально в браузере. Файл не отправляется
    в BuildMind или на прикладной сервер. PDF.js сначала
@@ -10,7 +10,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_OCR_VERSION =
-  'pdf-ocr-v1.1';
+  'pdf-ocr-v1.2';
 
 const PDF_OCR_DEFAULT_MIN_TEXT_LENGTH =
   60;
@@ -23,6 +23,9 @@ const PDF_OCR_MAX_PIXELS =
 
 const PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS =
   90000;
+
+const PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS =
+  300000;
 
 function createPdfOcrControlError(
   message,
@@ -289,10 +292,7 @@ async function createPdfOcrSession(
             options.signal || null,
           timeoutMs:
             options.initializationTimeoutMs ||
-            Math.max(
-              PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
-              Number(options.timeoutMs) || 0
-            ),
+            PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS,
           timeoutCode:
             'OCR_INITIALIZATION_TIMEOUT',
           timeoutMessage:
@@ -521,6 +521,8 @@ const BuildMindPdfOcrApi = {
     PDF_OCR_DEFAULT_MIN_TEXT_LENGTH,
   defaultPageTimeoutMs:
     PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
+  defaultInitializationTimeoutMs:
+    PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS,
   isAvailable:
     isPdfOcrAvailable,
   normalizeText:

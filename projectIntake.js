@@ -1184,10 +1184,36 @@ async function analyzeProjectIntakePdf(
   const api =
     window.BuildMindProjectDocuments;
 
+  const previousAnalysis =
+    documentItem.analysis || null;
+
+  const shouldRetryOcr =
+    Boolean(
+      previousAnalysis?.success &&
+      previousAnalysis
+        .ocrUnavailableReason &&
+      Array.isArray(
+        previousAnalysis
+          .ocrAttemptedPages
+      ) &&
+      previousAnalysis
+        .ocrAttemptedPages
+        .length > 0 &&
+      (
+        !Array.isArray(
+          previousAnalysis.ocrPages
+        ) ||
+        previousAnalysis
+          .ocrPages
+          .length === 0
+      )
+    );
+
   if (
     !documentItem
       .analysis
-      ?.success
+      ?.success ||
+    shouldRetryOcr
   ) {
     if (
       api &&
@@ -2548,6 +2574,9 @@ async function runBuildMindProjectIntake() {
     unreadablePagesCount:
       0,
 
+    partial:
+      false,
+
     worksCount:
       0,
 
@@ -3015,6 +3044,9 @@ async function runBuildMindProjectIntake() {
     projectIntakeLastResult =
       result;
 
+    result.partial =
+      result.unreadablePagesCount > 0;
+
     renderProjectIntake(
       result
     );
@@ -3022,10 +3054,18 @@ async function runBuildMindProjectIntake() {
     setProjectIntakeText(
       'projectIntakeStatus',
 
-      `${intakeT(
-        'intake.complete'
-      )} ` +
-      'Автоматически найденные выводы требуют инженерной проверки.'
+      result.partial
+        ? (
+            'Анализ завершён не полностью: ' +
+            `не прочитано страниц — ${result.unreadablePagesCount}. ` +
+            'Проверьте сообщение OCR и запустите анализ повторно.'
+          )
+        : (
+            `${intakeT(
+              'intake.complete'
+            )} ` +
+            'Автоматически найденные выводы требуют инженерной проверки.'
+          )
     );
 
     if (

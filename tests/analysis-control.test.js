@@ -64,6 +64,30 @@ assert.equal(
 
 assert.equal(
   app.includes(
+    'PROJECT_DOCUMENT_OCR_INITIALIZATION_TIMEOUT_MS'
+  ),
+  true,
+  'Первое подключение OCR должно иметь отдельное увеличенное время.'
+);
+
+assert.equal(
+  intake.includes(
+    'shouldRetryOcr'
+  ),
+  true,
+  'После ошибки подключения OCR повторный анализ должен запускать распознавание заново.'
+);
+
+assert.equal(
+  intake.includes(
+    'Анализ завершён не полностью'
+  ),
+  true,
+  'При непрочитанных страницах интерфейс не должен показывать полный успех.'
+);
+
+assert.equal(
+  app.includes(
     'projectDocumentsAnalysisBusy'
   ),
   true,
