@@ -4886,6 +4886,68 @@ function extractProjectDocumentPageText(
     .trim();
 }
 
+function extractProjectDocumentPageLayout(
+  items
+) {
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  )
+    .map(function (item) {
+      const text =
+        String(item?.str || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const transform =
+        Array.isArray(item?.transform)
+          ? item.transform
+          : [];
+      const x0 =
+        Number(transform[4]);
+      const baselineY =
+        Number(transform[5]);
+      const width =
+        Math.max(
+          1,
+          Number(item?.width) || 1
+        );
+      const height =
+        Math.max(
+          1,
+          Math.abs(
+            Number(item?.height) ||
+            Number(transform[3]) ||
+            1
+          )
+        );
+
+      if (
+        !text ||
+        !Number.isFinite(x0) ||
+        !Number.isFinite(baselineY)
+      ) {
+        return null;
+      }
+
+      return {
+        text,
+        confidence: 100,
+        bbox: {
+          x0,
+          y0:
+            baselineY - height,
+          x1:
+            x0 + width,
+          y1:
+            baselineY
+        }
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6000);
+}
+
 function notifyProjectDocumentAnalysisProgress(
   documentItem,
   detail
@@ -5121,6 +5183,11 @@ async function inspectPdfDocument(
             textContent.items
           );
 
+        const layoutWords =
+          extractProjectDocumentPageLayout(
+            textContent.items
+          );
+
         const nativeMeaningfulLength =
           getProjectDocumentMeaningfulLength(
             extractedText
@@ -5157,6 +5224,7 @@ async function inspectPdfDocument(
               0,
               30000
             ),
+          layoutWords,
           truncated:
             extractedText.length > 30000,
           extractionMethod:
@@ -5320,6 +5388,12 @@ async function inspectPdfDocument(
             'ocr';
           pageResult.ocrConfidence =
             recognition.confidence;
+          pageResult.layoutWords =
+            Array.isArray(
+              recognition.layoutWords
+            )
+              ? recognition.layoutWords
+              : [];
 
           ocrPages.push(pageNumber);
         } else if (

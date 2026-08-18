@@ -1,11 +1,11 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.2
+   BUILDMIND PROJECT INTAKE QUALITY — V1.4
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.3';
+  'project-intake-quality-v1.4';
 
 const PROJECT_INTAKE_QUALITY_KIND_RULES = [
   {
@@ -942,6 +942,86 @@ function getProjectIntakeQualityApprovalType(
   return 'approval';
 }
 
+function getProjectIntakeQualityApprovalTopic(
+  context,
+  type
+) {
+  const text =
+    normalizeProjectIntakeQualityText(
+      context
+    );
+  const topics = [
+    {
+      id: 'schedule',
+      label: 'График производства работ',
+      pattern:
+        /гпр|график[а-яё]*\s+производств[а-яё]*\s+работ[а-яё]*|календарн[а-яё]*\s+(?:график|план)[а-яё]*/
+    },
+    {
+      id: 'project-documentation',
+      label: 'Проектная / рабочая документация',
+      pattern:
+        /проектн[а-яё]*\s+документац[а-яё]*|рабоч[а-яё]*\s+документац[а-яё]*|проектн[а-яё]*\s+решени[а-яё]*/
+    },
+    {
+      id: 'scheme',
+      label: 'Схема производства работ',
+      pattern:
+        /схем[а-яё]*\s+(?:производств[а-яё]*\s+работ[а-яё]*|организац[а-яё]*\s+движени[а-яё]*|размещени[а-яё]*|работ[а-яё]*)/
+    },
+    {
+      id: 'materials',
+      label: 'Материалы / замены материалов',
+      pattern:
+        /материал[а-яё]*|замен[а-яё]*\s+материал[а-яё]*/
+    },
+    {
+      id: 'work-permit',
+      label: 'Разрешение / допуск к работам',
+      pattern:
+        /разрешени[а-яё]*\s+на\s+(?:производств[а-яё]*\s+)?работ[а-яё]*|допуск[а-яё]*\s+к\s+работ[а-яё]*|ордер[а-яё]*\s+на\s+работ[а-яё]*/
+    },
+    {
+      id: 'technical-conditions',
+      label: 'Технические условия',
+      pattern:
+        /техническ[а-яё]*\s+услови[а-яё]*|(^|[^а-яa-z])ту([^а-яa-z]|$)/
+    },
+    {
+      id: 'supervision',
+      label: 'Технический надзор / представитель',
+      pattern:
+        /технадзор|техническ[а-яё]*\s+надзор|представител[а-яё]*/
+    },
+    {
+      id: 'notification',
+      label: 'Уведомление',
+      pattern:
+        /уведомить|уведомлени[а-яё]*/
+    }
+  ];
+  const found =
+    topics.find(function (topic) {
+      return topic.pattern.test(text);
+    });
+
+  if (found) {
+    return {
+      id: found.id,
+      label: found.label
+    };
+  }
+
+  return {
+    id:
+      type || 'approval',
+    label:
+      PROJECT_INTAKE_QUALITY_APPROVAL_TYPE_LABELS[
+        type
+      ] || 'Согласование'
+  };
+}
+
 function detectProjectIntakeQualityOrganization(
   context
 ) {
@@ -1229,6 +1309,11 @@ function groupProjectIntakeQualityApprovals(
           candidate.context
         );
 
+      const topic =
+        candidate.topic ||
+        candidate.type ||
+        'approval';
+
       const existing =
         groups.find(
           function (
@@ -1258,8 +1343,8 @@ function groupProjectIntakeQualityApprovals(
               group.fileName ===
                 candidate.fileName &&
               (
-                group.signature ===
-                  signature ||
+                group.topic ===
+                  topic ||
                 sameNearbyOccurrence
               )
             );
@@ -1294,6 +1379,8 @@ function groupProjectIntakeQualityApprovals(
         ...candidate,
 
         signature,
+
+        topic,
 
         pageNumbers: [
           candidate.pageNumber
@@ -1444,6 +1531,12 @@ function extractProjectIntakeQualityApprovals(
             context
           );
 
+        const topic =
+          getProjectIntakeQualityApprovalTopic(
+            context,
+            type
+          );
+
         const organization =
           detectProjectIntakeQualityOrganization(
             context
@@ -1499,6 +1592,12 @@ function extractProjectIntakeQualityApprovals(
             PROJECT_INTAKE_QUALITY_APPROVAL_TYPE_LABELS[
               type
             ],
+
+          topic:
+            topic.id,
+
+          topicLabel:
+            topic.label,
 
           intent:
             intentResult.intent,
@@ -1650,6 +1749,180 @@ function groupProjectIntakeQualityUncertainRows(
     );
 }
 
+function evaluateProjectIntakeQualityResult(
+  result
+) {
+  const documents =
+    Array.isArray(result?.documents)
+      ? result.documents
+      : [];
+  const approvals =
+    Array.isArray(result?.approvals)
+      ? result.approvals
+      : [];
+  const issues = [];
+
+  documents.forEach(function (documentItem) {
+    const sections =
+      Array.isArray(documentItem?.sections)
+        ? documentItem.sections
+        : [];
+    const works =
+      Array.isArray(documentItem?.works)
+        ? documentItem.works
+        : [];
+    const totalPages =
+      Math.max(
+        1,
+        Number(documentItem?.totalPages) || 1
+      );
+    const maximumReasonableSections =
+      Math.max(
+        6,
+        Math.ceil(totalPages / 4)
+      );
+    const hasWorkVolume =
+      sections.some(function (section) {
+        return section?.kind === 'work-volume' ||
+          (
+            Array.isArray(
+              section?.secondaryKinds
+            ) &&
+            section.secondaryKinds.includes(
+              'work-volume'
+            )
+          ) ||
+          (
+            section?.kind ===
+              'commercial-proposal' &&
+            /ведомост[а-яё]*\s+(?:объем|обьем)[а-яё]*.*работ[а-яё]*/
+              .test(
+                normalizeProjectIntakeQualityText(
+                  section?.textSample || ''
+                )
+              )
+          );
+      });
+    const hasSchedule =
+      sections.some(function (section) {
+        return section?.kind === 'schedule';
+      });
+    const scheduleWorks =
+      works.filter(function (candidate) {
+        return (
+          candidate?.sourceType ===
+            'pdf-schedule' ||
+          (
+            Array.isArray(
+              candidate?.sourceTypes
+            ) &&
+            candidate.sourceTypes.includes(
+              'pdf-schedule'
+            )
+          )
+        );
+      });
+
+    if (
+      sections.length >
+      maximumReasonableSections
+    ) {
+      issues.push({
+        code: 'section-fragmentation',
+        severity: 'blocked',
+        fileName:
+          documentItem.fileName || '',
+        title:
+          'Слишком много переключений типа документа',
+        message:
+          `Найдено разделов: ${sections.length}. ` +
+          'Результат не считается завершённым до повторной проверки границ.'
+      });
+    }
+
+    if (
+      hasWorkVolume &&
+      works.filter(function (candidate) {
+        return candidate?.quantity !== null;
+      }).length === 0
+    ) {
+      issues.push({
+        code: 'work-volume-empty',
+        severity: 'blocked',
+        fileName:
+          documentItem.fileName || '',
+        title:
+          'ВОР найден, но работы не извлечены',
+        message:
+          'BuildMind не имеет права показывать завершённый анализ, пока строки ВОР не прочитаны.'
+      });
+    }
+
+    if (
+      hasSchedule &&
+      scheduleWorks.length === 0
+    ) {
+      issues.push({
+        code: 'schedule-rows-empty',
+        severity: 'review',
+        fileName:
+          documentItem.fileName || '',
+        title:
+          'ГПР найден, но строки графика не извлечены',
+        message:
+          'Нужно проверить распознавание названий работ и дат внутри ГПР.'
+      });
+    }
+  });
+
+  const approvalLimit =
+    Math.max(
+      12,
+      documents.length * 8
+    );
+
+  if (approvals.length > approvalLimit) {
+    issues.push({
+      code: 'approval-overflow',
+      severity: 'blocked',
+      fileName: '',
+      title:
+        'Найдено слишком много вопросов согласования',
+      message:
+        `После объединения осталось ${approvals.length}. ` +
+        'Результат требует дополнительной фильтрации повторов.'
+    });
+  }
+
+  if (
+    Number(result?.unreadablePagesCount) > 0
+  ) {
+    issues.push({
+      code: 'unreadable-pages',
+      severity: 'blocked',
+      fileName: '',
+      title:
+        'Есть непрочитанные страницы',
+      message:
+        `Не прочитано страниц: ${result.unreadablePagesCount}.`
+    });
+  }
+
+  const status =
+    issues.some(function (issue) {
+      return issue.severity === 'blocked';
+    })
+      ? 'blocked'
+      : issues.length > 0
+        ? 'review'
+        : 'complete';
+
+  return {
+    status,
+    issues
+  };
+}
+
 window.BuildMindProjectIntakeQuality = {
   version:
     BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION,
@@ -1668,6 +1941,9 @@ window.BuildMindProjectIntakeQuality = {
 
   groupUncertainRows:
     groupProjectIntakeQualityUncertainRows,
+
+  evaluateResult:
+    evaluateProjectIntakeQualityResult,
 
   isStampContext:
     isProjectIntakeQualityStampContext

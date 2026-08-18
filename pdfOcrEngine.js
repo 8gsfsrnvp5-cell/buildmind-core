@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF OCR ENGINE — V1.2
+   BUILDMIND PDF OCR ENGINE — V1.3
 
    OCR выполняется локально в браузере. Файл не отправляется
    в BuildMind или на прикладной сервер. PDF.js сначала
@@ -10,7 +10,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_OCR_VERSION =
-  'pdf-ocr-v1.2';
+  'pdf-ocr-v1.3';
 
 const PDF_OCR_DEFAULT_MIN_TEXT_LENGTH =
   60;
@@ -172,6 +172,83 @@ function getPdfOcrMeaningfulLength(value) {
   return normalizePdfOcrText(value)
     .replace(/[^а-яА-ЯёЁa-zA-Z0-9]/g, '')
     .length;
+}
+
+function extractPdfOcrLayoutWords(
+  blocks
+) {
+  const words = [];
+
+  (
+    Array.isArray(blocks)
+      ? blocks
+      : []
+  ).forEach(function (block) {
+    (
+      Array.isArray(block?.paragraphs)
+        ? block.paragraphs
+        : []
+    ).forEach(function (paragraph) {
+      (
+        Array.isArray(paragraph?.lines)
+          ? paragraph.lines
+          : []
+      ).forEach(function (line) {
+        (
+          Array.isArray(line?.words)
+            ? line.words
+            : []
+        ).forEach(function (word) {
+          if (words.length >= 6000) {
+            return;
+          }
+
+          const text =
+            String(word?.text || '')
+              .replace(/\s+/g, ' ')
+              .trim();
+          const bbox =
+            word?.bbox || {};
+          const x0 =
+            Number(bbox.x0);
+          const y0 =
+            Number(bbox.y0);
+          const x1 =
+            Number(bbox.x1);
+          const y1 =
+            Number(bbox.y1);
+
+          if (
+            !text ||
+            ![
+              x0,
+              y0,
+              x1,
+              y1
+            ].every(Number.isFinite) ||
+            x1 <= x0 ||
+            y1 <= y0
+          ) {
+            return;
+          }
+
+          words.push({
+            text,
+            confidence:
+              Number(word?.confidence) || 0,
+            bbox: {
+              x0,
+              y0,
+              x1,
+              y1
+            }
+          });
+        });
+      });
+    });
+  });
+
+  return words;
 }
 
 function shouldRecognizePdfPage(
@@ -455,7 +532,12 @@ async function createPdfOcrSession(
         const recognition =
           await runPdfOcrControlledOperation(
             worker.recognize(
-              canvas
+              canvas,
+              {},
+              {
+                text: true,
+                blocks: true
+              }
             ),
             {
               signal:
@@ -477,6 +559,11 @@ async function createPdfOcrSession(
             ''
           );
 
+        const layoutWords =
+          extractPdfOcrLayoutWords(
+            recognition?.data?.blocks
+          );
+
         return {
           success: true,
           pageNumber:
@@ -494,6 +581,7 @@ async function createPdfOcrSession(
                 ?.data
                 ?.confidence
             ) || 0,
+          layoutWords,
           scale,
           width:
             canvas.width,
@@ -523,6 +611,8 @@ const BuildMindPdfOcrApi = {
     PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
   defaultInitializationTimeoutMs:
     PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS,
+  extractLayoutWords:
+    extractPdfOcrLayoutWords,
   isAvailable:
     isPdfOcrAvailable,
   normalizeText:

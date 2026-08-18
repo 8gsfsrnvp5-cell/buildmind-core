@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND COMPOSITE PDF ENGINE — V1
+   BUILDMIND COMPOSITE PDF ENGINE — V1.2
 
    Назначение:
    - анализировать каждую страницу PDF отдельно;
@@ -15,7 +15,13 @@
    ================================================== */
 
 const BUILDMIND_COMPOSITE_PDF_VERSION =
-  'composite-pdf-v1.1';
+  'composite-pdf-v1.2';
+
+const COMPOSITE_PDF_LEAD_TEXT_LIMIT =
+  700;
+
+const COMPOSITE_PDF_TITLE_LINE_LIMIT =
+  14;
 
 const COMPOSITE_PDF_MIN_PROJECT_YEAR =
   2000;
@@ -360,7 +366,78 @@ function getCompositePdfAnalysisDate(
 
 function getCompositePdfLeadText(text) {
   return normalizeCompositePdfText(text)
-    .slice(0, 1800);
+    .slice(
+      0,
+      COMPOSITE_PDF_LEAD_TEXT_LIMIT
+    );
+}
+
+function getCompositePdfLeadLines(text) {
+  return normalizeCompositePdfText(text)
+    .split(/\r?\n/)
+    .map(function (line) {
+      return line.trim();
+    })
+    .filter(Boolean)
+    .slice(
+      0,
+      COMPOSITE_PDF_TITLE_LINE_LIMIT
+    );
+}
+
+function getCompositePdfPatternIndex(
+  pattern,
+  text
+) {
+  pattern.lastIndex = 0;
+
+  const match =
+    pattern.exec(text);
+
+  return match
+    ? match.index
+    : -1;
+}
+
+function hasCompositePdfBoundaryTitle(
+  patterns,
+  text
+) {
+  const lines =
+    getCompositePdfLeadLines(text);
+
+  return lines.some(function (line) {
+    if (line.length > 260) {
+      return false;
+    }
+
+    return patterns.some(
+      function (pattern) {
+        const index =
+          getCompositePdfPatternIndex(
+            pattern,
+            line
+          );
+
+        if (index < 0) {
+          return false;
+        }
+
+        const prefix =
+          line.slice(0, index);
+
+        return (
+          index <= 55 &&
+          !/[а-яa-z]{5,}/.test(
+            prefix.replace(
+              /приложени[а-я]*\s*№?\s*[\d.\-]*/g,
+              ''
+            )
+          )
+        );
+      }
+    );
+  });
 }
 
 function testCompositePdfPattern(pattern, text) {
@@ -422,6 +499,7 @@ function getCompositePdfScheduleSignals(
   return {
     hasScheduleName,
     hasScheduleStructure,
+    hasContractLanguage,
     referenceOnly:
       hasScheduleName &&
       hasContractLanguage &&
@@ -728,6 +806,12 @@ function classifyCompositePdfPage(page) {
         const structuralBonus =
           Number(bonuses[rule.kind]) || 0;
 
+        const boundaryTitle =
+          hasCompositePdfBoundaryTitle(
+            rule.title,
+            rawText
+          );
+
         let score =
           titleLead.length * 24 +
           Math.max(
@@ -743,7 +827,17 @@ function classifyCompositePdfPage(page) {
           rule.kind === 'schedule' &&
           scheduleSignals.referenceOnly;
 
-        if (scheduleReferenceOnly) {
+        const contractReferenceOnly =
+          rule.kind !== 'agreement' &&
+          scheduleSignals
+            .hasContractLanguage &&
+          structuralBonus === 0 &&
+          !boundaryTitle;
+
+        if (
+          scheduleReferenceOnly ||
+          contractReferenceOnly
+        ) {
           score =
             Math.min(score, 5);
         }
@@ -789,13 +883,12 @@ function classifyCompositePdfPage(page) {
         return {
           kind: rule.kind,
           score,
+          boundaryTitle,
           anchor:
             !contentsPage &&
             !scheduleReferenceOnly &&
-            (
-              titleLead.length > 0 ||
-              score >= 16
-            ),
+            !contractReferenceOnly &&
+            boundaryTitle,
           evidence
         };
       }
@@ -849,6 +942,11 @@ function classifyCompositePdfPage(page) {
       Boolean(
         hasResult &&
         best.anchor
+      ),
+    boundaryTitle:
+      Boolean(
+        hasResult &&
+        best.boundaryTitle
       ),
     evidence:
       hasResult
@@ -919,19 +1017,9 @@ function assignCompositePdfPageKinds(pageResults) {
       return;
     }
 
-    if (
-      page.kind === activeKind ||
-      page.kind === 'other' ||
-      page.score < 12
-    ) {
-      page.assignedKind = activeKind;
-      page.inherited =
-        page.kind !== activeKind;
-      return;
-    }
-
-    activeKind = page.kind;
-    page.assignedKind = page.kind;
+    page.assignedKind = activeKind;
+    page.inherited =
+      page.kind !== activeKind;
   });
 
   const firstAssignedIndex =
@@ -1115,6 +1203,19 @@ function createCompositePdfSections(
 
     let scheduleStatus = null;
 
+    const secondaryKinds = [];
+
+    if (
+      section.kind ===
+        'commercial-proposal' &&
+      /ведомост[а-я]*\s+(?:объем|объ[её]м|обьем)[а-я]*\s+и\s+стоимост[а-я]*\s+работ[а-я]*/
+        .test(section.textSample)
+    ) {
+      secondaryKinds.push(
+        'work-volume'
+      );
+    }
+
     if (
       section.kind === 'schedule' &&
       dateRange
@@ -1141,6 +1242,7 @@ function createCompositePdfSections(
 
     return {
       ...section,
+      secondaryKinds,
       confidence,
       evidence:
         Array.from(
@@ -1261,7 +1363,14 @@ function analyzeCompositePdfPages(
       workVolumes:
         meaningfulSections.filter(
           function (section) {
-            return section.kind === 'work-volume';
+            return (
+              section.kind ===
+                'work-volume' ||
+              section.secondaryKinds
+                .includes(
+                  'work-volume'
+                )
+            );
           }
         ).length,
       schedules:

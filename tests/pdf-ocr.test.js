@@ -131,12 +131,69 @@ async function run() {
         );
 
         return {
-          async recognize() {
+          async recognize(
+            canvas,
+            recognizeOptions,
+            outputOptions
+          ) {
+            assert.equal(
+              typeof canvas,
+              'object'
+            );
+            assert.deepEqual(
+              recognizeOptions,
+              {}
+            );
+            assert.equal(
+              outputOptions.text,
+              true
+            );
+            assert.equal(
+              outputOptions.blocks,
+              true
+            );
+
             return {
               data: {
                 text:
                   'ВЕДОМОСТЬ ОБЪЁМОВ РАБОТ',
-                confidence: 92
+                confidence: 92,
+                blocks: [
+                  {
+                    paragraphs: [
+                      {
+                        lines: [
+                          {
+                            words: [
+                              {
+                                text:
+                                  'ВЕДОМОСТЬ',
+                                confidence: 91,
+                                bbox: {
+                                  x0: 10,
+                                  y0: 20,
+                                  x1: 120,
+                                  y1: 45
+                                }
+                              },
+                              {
+                                text:
+                                  'РАБОТ',
+                                confidence: 93,
+                                bbox: {
+                                  x0: 140,
+                                  y0: 20,
+                                  x1: 210,
+                                  y1: 45
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             };
           },
@@ -202,6 +259,14 @@ async function run() {
   assert.equal(
     recognized.text,
     'ВЕДОМОСТЬ ОБЪЁМОВ РАБОТ'
+  );
+  assert.deepEqual(
+    recognized.layoutWords.map(
+      function (word) {
+        return word.text;
+      }
+    ),
+    ['ВЕДОМОСТЬ', 'РАБОТ']
   );
 
   await session.terminate();

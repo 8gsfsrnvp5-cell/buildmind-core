@@ -81,6 +81,16 @@ function run() {
             pageNumber: 7,
             text:
               'Согласование схемы с Заказчиком.'
+          },
+          {
+            pageNumber: 8,
+            text:
+              'Подрядчик повторно указывает, что обязан согласовать график производства работ с Заказчиком.'
+          },
+          {
+            pageNumber: 9,
+            text:
+              'До начала работ Подрядчик обязан получить согласование схемы с Заказчиком.'
           }
         ]
       }
@@ -128,6 +138,128 @@ function run() {
   assert.equal(
     byPage.has(7),
     false
+  );
+
+  assert.deepEqual(
+    byPage.get(1).pageNumbers,
+    [1, 9]
+  );
+  assert.deepEqual(
+    byPage.get(2).pageNumbers,
+    [2, 8]
+  );
+
+  const failedQuality =
+    intakeQuality.evaluateResult({
+      unreadablePagesCount: 0,
+      approvals:
+        Array.from(
+          {
+            length: 41
+          },
+          function () {
+            return {};
+          }
+        ),
+      documents: [
+        {
+          fileName: 'ROAD-FAIL.pdf',
+          totalPages: 41,
+          works: [],
+          sections:
+            Array.from(
+              {
+                length: 14
+              },
+              function (_, index) {
+                return {
+                  kind:
+                    index === 12
+                      ? 'work-volume'
+                      : 'agreement'
+                };
+              }
+            )
+        }
+      ]
+    });
+
+  assert.equal(
+    failedQuality.status,
+    'blocked'
+  );
+  assert.ok(
+    failedQuality.issues.some(
+      function (issue) {
+        return issue.code ===
+          'section-fragmentation';
+      }
+    )
+  );
+  assert.ok(
+    failedQuality.issues.some(
+      function (issue) {
+        return issue.code ===
+          'work-volume-empty';
+      }
+    )
+  );
+  assert.ok(
+    failedQuality.issues.some(
+      function (issue) {
+        return issue.code ===
+          'approval-overflow';
+      }
+    )
+  );
+
+  const passedQuality =
+    intakeQuality.evaluateResult({
+      unreadablePagesCount: 0,
+      approvals: approvals.slice(0, 4),
+      documents: [
+        {
+          fileName: 'ROAD-PASS.pdf',
+          totalPages: 41,
+          sections: [
+            {
+              kind: 'agreement'
+            },
+            {
+              kind: 'schedule'
+            },
+            {
+              kind:
+                'commercial-proposal',
+              secondaryKinds: [
+                'work-volume'
+              ]
+            }
+          ],
+          works: [
+            {
+              workName:
+                'Земляные работы',
+              quantity: 1250,
+              sourceType:
+                'pdf-work-volume',
+              sourceTypes: [
+                'pdf-work-volume',
+                'pdf-schedule'
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+  assert.equal(
+    passedQuality.status,
+    'complete'
+  );
+  assert.deepEqual(
+    passedQuality.issues,
+    []
   );
 
   delete global.window;

@@ -25,6 +25,11 @@ const index = fs.readFileSync(
   'utf8'
 );
 
+const pdfTable = fs.readFileSync(
+  path.join(root, 'pdfTableEngine.js'),
+  'utf8'
+);
+
 assert.equal(
   index.includes('id="analyzePdfBtn"'),
   false,
@@ -84,6 +89,64 @@ assert.equal(
   ),
   true,
   'При непрочитанных страницах интерфейс не должен показывать полный успех.'
+);
+
+assert.equal(
+  index.includes(
+    'pdfTableEngine.js?v=1'
+  ),
+  true,
+  'Перед Project Intake должен подключаться анализатор PDF-таблиц.'
+);
+
+const pdfAnalyzerSource =
+  intake.slice(
+    intake.indexOf(
+      'async function analyzeProjectIntakePdf'
+    ),
+    intake.indexOf(
+      'async function analyzeProjectIntakeTable'
+    )
+  );
+
+assert.equal(
+  pdfAnalyzerSource.includes(
+    'BuildMindPdfTable'
+  ),
+  true,
+  'PDF должен передаваться в анализатор строк ВОР и ГПР.'
+);
+
+assert.equal(
+  pdfAnalyzerSource.includes(
+    'works: []'
+  ),
+  false,
+  'PDF-анализатор не должен заранее возвращать пустой список работ.'
+);
+
+assert.equal(
+  intake.includes(
+    'Анализ не прошёл контроль качества'
+  ),
+  true,
+  'Противоречивый результат нельзя показывать как завершённый.'
+);
+
+assert.equal(
+  intake.includes(
+    'result.reviewItems.unshift('
+  ),
+  true,
+  'Причина блокировки должна показываться раньше длинного списка согласований.'
+);
+
+assert.equal(
+  pdfTable.includes(
+    'layoutWords'
+  ),
+  true,
+  'Извлечение строк PDF должно использовать координаты OCR.'
 );
 
 assert.equal(
