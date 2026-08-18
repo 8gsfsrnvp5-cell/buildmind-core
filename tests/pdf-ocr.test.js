@@ -26,6 +26,34 @@ async function run() {
     7
   );
 
+  assert.ok(
+    pdfOcr.defaultInitializationTimeoutMs >=
+      60000 &&
+      pdfOcr.defaultInitializationTimeoutMs <=
+        120000,
+    'Локальный OCR не должен ждать внешнюю сеть пять минут.'
+  );
+
+  const localAssetOptions =
+    pdfOcr.getLocalAssetOptions();
+
+  assert.equal(
+    localAssetOptions.workerPath,
+    'vendor/tesseract/worker.min.js'
+  );
+  assert.equal(
+    localAssetOptions.corePath,
+    'vendor/tesseract-core'
+  );
+  assert.equal(
+    localAssetOptions.langPath,
+    'vendor/tessdata/4.0.0_best_int'
+  );
+  assert.equal(
+    localAssetOptions.workerBlobURL,
+    false
+  );
+
   const limitedScale =
     pdfOcr.getRenderScale(
       5000,
@@ -106,6 +134,8 @@ async function run() {
 
   let terminated = false;
   let rendered = false;
+  const initializationUpdates = [];
+  const recognizeCalls = [];
 
   global.window = {
     Tesseract: {
@@ -123,14 +153,88 @@ async function run() {
           typeof options.logger,
           'function'
         );
+        assert.equal(
+          options.workerPath,
+          'vendor/tesseract/worker.min.js'
+        );
+        assert.equal(
+          options.corePath,
+          'vendor/tesseract-core'
+        );
+        assert.equal(
+          options.langPath,
+          'vendor/tessdata/4.0.0_best_int'
+        );
+        assert.equal(
+          options.workerBlobURL,
+          false
+        );
+
+        options.logger({
+          status: 'loading language traineddata',
+          progress: 0.5
+        });
 
         return {
-          async recognize() {
+          async recognize(
+            canvas,
+            recognizeOptions,
+            outputOptions
+          ) {
+            assert.equal(
+              typeof canvas,
+              'object'
+            );
+            recognizeCalls.push({
+              recognizeOptions,
+              outputOptions
+            });
+            assert.equal(
+              outputOptions.text,
+              true
+            );
+
             return {
               data: {
                 text:
                   'ВЕДОМОСТЬ ОБЪЁМОВ РАБОТ',
-                confidence: 92
+                confidence: 92,
+                blocks: [
+                  {
+                    paragraphs: [
+                      {
+                        lines: [
+                          {
+                            words: [
+                              {
+                                text:
+                                  'ВЕДОМОСТЬ',
+                                confidence: 91,
+                                bbox: {
+                                  x0: 10,
+                                  y0: 20,
+                                  x1: 120,
+                                  y1: 45
+                                }
+                              },
+                              {
+                                text:
+                                  'РАБОТ',
+                                confidence: 93,
+                                bbox: {
+                                  x0: 140,
+                                  y0: 20,
+                                  x1: 210,
+                                  y1: 45
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             };
           },
@@ -159,7 +263,20 @@ async function run() {
   };
 
   const session =
-    await pdfOcr.createSession();
+    await pdfOcr.createSession({
+      onInitializationProgress(update) {
+        initializationUpdates.push(update);
+      }
+    });
+
+  assert.equal(
+    initializationUpdates.length,
+    1
+  );
+  assert.equal(
+    initializationUpdates[0].stage,
+    'initialization'
+  );
 
   const recognized =
     await session.recognizePage(
@@ -196,6 +313,56 @@ async function run() {
   assert.equal(
     recognized.text,
     'ВЕДОМОСТЬ ОБЪЁМОВ РАБОТ'
+  );
+  assert.deepEqual(
+    recognized.layoutWords.map(
+      function (word) {
+        return word.text;
+      }
+    ),
+    ['ВЕДОМОСТЬ', 'РАБОТ']
+  );
+
+  const quickRecognition =
+    await session.recognizePage(
+      {
+        getViewport({
+          scale
+        }) {
+          return {
+            width: 1000 * scale,
+            height: 1400 * scale
+          };
+        },
+
+        render() {
+          return {
+            promise:
+              Promise.resolve()
+          };
+        }
+      },
+      13,
+      {
+        includeLayout: false
+      }
+    );
+
+  assert.equal(
+    quickRecognition.includeLayout,
+    false
+  );
+  assert.deepEqual(
+    quickRecognition.layoutWords,
+    []
+  );
+  assert.equal(
+    recognizeCalls[0].outputOptions.blocks,
+    true
+  );
+  assert.equal(
+    recognizeCalls[1].outputOptions.blocks,
+    false
   );
 
   await session.terminate();

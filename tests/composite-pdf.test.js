@@ -176,6 +176,141 @@ function run() {
     true
   );
 
+  const numberedAppendixRegister =
+    compositePdf.classifyPage({
+      pageNumber: 31,
+      extractionMethod: 'ocr',
+      text:
+        '19. ПРИЛОЖЕНИЯ К ДОГОВОРУ\nПриложение № 1 — График производства работ;\nПриложение № 1.1 — График освоения денежных средств;\nПриложение № 2 — Ведомость объемов и стоимости работ.'
+    });
+
+  assert.equal(
+    numberedAppendixRegister.contentsPage,
+    true
+  );
+  assert.equal(
+    numberedAppendixRegister.anchor,
+    false
+  );
+
+  const contractWithAppendixRegister =
+    compositePdf.analyzePages([
+      {
+        pageNumber: 30,
+        extractionMethod: 'ocr',
+        text:
+          '18.6. Подрядчик обязуется выполнить работы. Заказчик и Подрядчик руководствуются условиями договора.'
+      },
+      {
+        pageNumber: 31,
+        extractionMethod: 'ocr',
+        text:
+          '19. ПРИЛОЖЕНИЯ К ДОГОВОРУ\nПриложение № 1 — График производства работ;\nПриложение № 2 — Ведомость объемов и стоимости работ.'
+      },
+      {
+        pageNumber: 32,
+        extractionMethod: 'ocr',
+        text:
+          '20. АДРЕСА И РЕКВИЗИТЫ СТОРОН. Заказчик. Подрядчик. Подписи сторон.'
+      }
+    ], {
+      analysisDate: '2026-08-16'
+    });
+
+  assert.deepEqual(
+    contractWithAppendixRegister.detectedKinds,
+    ['agreement']
+  );
+  assert.equal(
+    contractWithAppendixRegister.counts.schedules,
+    0
+  );
+
+  const contractScheduleReference =
+    compositePdf.classifyPage({
+      pageNumber: 11,
+      extractionMethod: 'text',
+      text:
+        '4.1. Подрядчик выполняет работы. 4.2. Заказчик принимает результат. 4.3. Подрядчик обязан разработать и согласовать график производства работ. 4.4. Стороны руководствуются условиями договора.'
+    });
+
+  assert.notEqual(
+    contractScheduleReference.kind,
+    'schedule'
+  );
+  assert.equal(
+    contractScheduleReference.anchor,
+    false
+  );
+
+  const contractWithoutFalseSchedule =
+    compositePdf.analyzePages([
+      {
+        pageNumber: 1,
+        extractionMethod: 'text',
+        text:
+          'ДОГОВОР ПОДРЯДА № TEST-02. Предмет договора. Заказчик поручает, а Подрядчик обязуется выполнить работы.'
+      },
+      {
+        pageNumber: 2,
+        extractionMethod: 'text',
+        text:
+          '4.1. Подрядчик выполняет работы. 4.2. Заказчик принимает результат. 4.3. Подрядчик обязан представить график производства работ. 4.4. Стороны согласовали условия договора.'
+      }
+    ], {
+      analysisDate: '2026-08-16'
+    });
+
+  assert.deepEqual(
+    contractWithoutFalseSchedule.detectedKinds,
+    ['agreement']
+  );
+  assert.equal(
+    contractWithoutFalseSchedule.counts.schedules,
+    0
+  );
+
+  const scheduleWithDateNoise =
+    compositePdf.analyzePages([
+      {
+        pageNumber: 1,
+        extractionMethod: 'ocr',
+        text:
+          'ГРАФИК ПРОИЗВОДСТВА РАБОТ. Наименование работ. Дата начала. Дата окончания. Продолжительность. Земляные работы 01.04.2026 30.09.2026. Ошибка OCR 31.04.2026 и 01.04.2825.'
+      }
+    ], {
+      analysisDate: '2026-08-16'
+    });
+
+  const noisySchedule =
+    scheduleWithDateNoise
+      .meaningfulSections[0];
+
+  assert.equal(
+    noisySchedule.kind,
+    'schedule'
+  );
+  assert.deepEqual(
+    noisySchedule.dateRange,
+    {
+      startDate: '2026-04-01',
+      endDate: '2026-09-30',
+      datesCount: 2
+    }
+  );
+  assert.deepEqual(
+    noisySchedule.rejectedDateValues,
+    ['2825-04-01']
+  );
+  assert.equal(
+    noisySchedule.dateValidation.status,
+    'review'
+  );
+  assert.equal(
+    noisySchedule.scheduleStatus,
+    'review'
+  );
+
   console.log(
     'BuildMind composite PDF test: PASS'
   );

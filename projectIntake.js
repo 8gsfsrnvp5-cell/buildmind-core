@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.4
+   BUILDMIND PROJECT INTAKE — V1.5
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.4';
+  'project-intake-v1.5';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -1173,6 +1173,45 @@ function extractProjectIntakeApprovals(
   return candidates;
 }
 
+function mergeProjectIntakePdfCandidates(
+  primary,
+  secondary
+) {
+  const result = [];
+  const seen = new Set();
+
+  [
+    ...(Array.isArray(primary) ? primary : []),
+    ...(Array.isArray(secondary) ? secondary : [])
+  ].forEach(function (candidate) {
+    const name =
+      String(
+        candidate?.workName ||
+        candidate?.name ||
+        ''
+      )
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const key = [
+      name,
+      candidate?.unit || '',
+      candidate?.quantity ?? '',
+      candidate?.pageNumber || ''
+    ].join('|');
+
+    if (!name || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    result.push(candidate);
+  });
+
+  return result;
+}
+
 async function analyzeProjectIntakePdf(
   documentItem,
   options = {}
@@ -1184,10 +1223,49 @@ async function analyzeProjectIntakePdf(
   const api =
     window.BuildMindProjectDocuments;
 
+  const previousAnalysis =
+    documentItem.analysis || null;
+
+  const shouldRetryOcr =
+    Boolean(
+      previousAnalysis?.success &&
+      (
+        previousAnalysis
+          .ocrUnavailableReason ||
+        previousAnalysis
+          .ocrLimitReason
+      ) &&
+      Array.isArray(
+        previousAnalysis
+          .ocrAttemptedPages
+      ) &&
+      previousAnalysis
+        .ocrAttemptedPages
+        .length > 0 &&
+      (
+        !Array.isArray(
+          previousAnalysis.ocrPages
+        ) ||
+        previousAnalysis
+          .ocrPages
+          .length === 0 ||
+        (
+          Array.isArray(
+            previousAnalysis
+              .ocrSkippedPages
+          ) &&
+          previousAnalysis
+            .ocrSkippedPages
+            .length > 0
+        )
+      )
+    );
+
   if (
     !documentItem
       .analysis
-      ?.success
+      ?.success ||
+    shouldRetryOcr
   ) {
     if (
       api &&
@@ -1233,6 +1311,52 @@ async function analyzeProjectIntakePdf(
       ?.compositeAnalysis ||
     null;
 
+  const sections =
+    Array.isArray(
+      compositeAnalysis
+        ?.meaningfulSections
+    )
+      ? compositeAnalysis
+          .meaningfulSections
+      : [];
+
+  const pdfTableAnalysis =
+    window.BuildMindPdfTable &&
+    typeof window
+      .BuildMindPdfTable
+      .analyzePages === 'function'
+      ? window
+          .BuildMindPdfTable
+          .analyzePages(
+            documentItem
+              .analysis
+              ?.extractedPages || [],
+            sections,
+            {
+              sourceDocument:
+                documentItem.file.name
+            }
+          )
+      : null;
+
+  const legacyMaterials =
+    Array.isArray(
+      documentItem
+        .analysis
+        ?.materialCandidates
+    )
+      ? documentItem
+          .analysis
+          .materialCandidates
+      : [];
+
+  const pdfMaterials =
+    Array.isArray(
+      pdfTableAnalysis?.materials
+    )
+      ? pdfTableAnalysis.materials
+      : [];
+
   return {
     classification:
       classifyProjectIntakePdf(
@@ -1241,14 +1365,7 @@ async function analyzeProjectIntakePdf(
 
     compositeAnalysis,
 
-    sections:
-      Array.isArray(
-        compositeAnalysis
-          ?.meaningfulSections
-      )
-        ? compositeAnalysis
-            .meaningfulSections
-        : [],
+    sections,
 
     ocrPages:
       Array.isArray(
@@ -1261,31 +1378,86 @@ async function analyzeProjectIntakePdf(
             .ocrPages
         : [],
 
-    unreadablePages:
+    ocrFastPages:
       Array.isArray(
         documentItem
           .analysis
-          ?.ocrFailedPages
+          ?.ocrFastPages
       )
         ? documentItem
             .analysis
-            .ocrFailedPages
+            .ocrFastPages
         : [],
 
-    works: [],
+    ocrDetailPages:
+      Array.isArray(
+        documentItem
+          .analysis
+          ?.ocrDetailPages
+      )
+        ? documentItem
+            .analysis
+            .ocrDetailPages
+        : [],
+
+    ocrLimitReason:
+      String(
+        documentItem
+          .analysis
+          ?.ocrLimitReason || ''
+      ),
+
+    unreadablePages:
+      Array.from(
+        new Set(
+          [
+            ...(
+              Array.isArray(
+                documentItem
+                  .analysis
+                  ?.ocrFailedPages
+              )
+                ? documentItem
+                    .analysis
+                    .ocrFailedPages
+                : []
+            ),
+            ...(
+              Array.isArray(
+                documentItem
+                  .analysis
+                  ?.ocrSkippedPages
+              )
+                ? documentItem
+                    .analysis
+                    .ocrSkippedPages
+                : []
+            )
+          ]
+        )
+      ),
+
+    works:
+      Array.isArray(
+        pdfTableAnalysis?.works
+      )
+        ? pdfTableAnalysis.works
+        : [],
 
     materials:
+      mergeProjectIntakePdfCandidates(
+        pdfMaterials,
+        legacyMaterials
+      ),
+
+    uncertain:
       Array.isArray(
-        documentItem
-          .analysis
-          ?.materialCandidates
+        pdfTableAnalysis?.uncertain
       )
-        ? documentItem
-            .analysis
-            .materialCandidates
+        ? pdfTableAnalysis.uncertain
         : [],
 
-    uncertain: [],
+    pdfTableAnalysis,
 
     approvals:
       extractProjectIntakeApprovals(
@@ -1472,7 +1644,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АНАЛИЗ КОМПЛЕКТА · V1.4
+          АНАЛИЗ КОМПЛЕКТА · V1.5
         </span>
 
         <h2>
@@ -1742,6 +1914,9 @@ function renderProjectIntakeDocumentList(
                               section.scheduleStatus ===
                                 'expired'
                                 ? ' · срок графика прошёл'
+                                : section.scheduleStatus ===
+                                    'review'
+                                  ? ' · даты требуют проверки'
                                 : ''
                             )
                           : '';
@@ -1781,8 +1956,32 @@ function renderProjectIntakeDocumentList(
           const ocrText =
             Array.isArray(item.ocrPages) &&
             item.ocrPages.length > 0
-              ? `OCR прочитал страницы: ${item.ocrPages.join(', ')}`
+              ? `Локальный OCR: быстрый проход — ${
+                  Array.isArray(item.ocrFastPages)
+                    ? item.ocrFastPages.length
+                    : 0
+                } стр.; точное чтение таблиц — ${
+                  Array.isArray(item.ocrDetailPages)
+                    ? item.ocrDetailPages.length
+                    : 0
+                } стр.`
               : '';
+
+          const ocrLimitText =
+            item.ocrLimitReason
+              ? ` ${item.ocrLimitReason}`
+              : '';
+
+          const extractedEvidenceText =
+            `Извлечено из таблиц: работ — ${
+              Array.isArray(item.works)
+                ? item.works.length
+                : 0
+            }, материалов — ${
+              Array.isArray(item.materials)
+                ? item.materials.length
+                : 0
+            }.`;
 
           return `
             <article class="project-intake-item">
@@ -1809,10 +2008,16 @@ function renderProjectIntakeDocumentList(
 
                 ${sectionsHtml}
 
+                <small class="project-intake-ocr-note">
+                  ${escapeProjectIntakeHtml(
+                    extractedEvidenceText
+                  )}
+                </small>
+
                 ${
                   ocrText
                     ? `<small class="project-intake-ocr-note">${escapeProjectIntakeHtml(
-                        ocrText
+                        ocrText + ocrLimitText
                       )}</small>`
                     : ''
                 }
@@ -1876,6 +2081,40 @@ function renderProjectIntakeReviewList(
         function (item) {
           if (
             item.reviewType ===
+            'analysis-quality'
+          ) {
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Контроль качества
+                </span>
+
+                <strong>
+                  ${escapeProjectIntakeHtml(
+                    item.title ||
+                    'Результат требует проверки'
+                  )}
+                </strong>
+
+                ${
+                  item.fileName
+                    ? `<p>${escapeProjectIntakeHtml(
+                        item.fileName
+                      )}</p>`
+                    : ''
+                }
+
+                <small>
+                  ${escapeProjectIntakeHtml(
+                    item.message || ''
+                  )}
+                </small>
+              </article>
+            `;
+          }
+
+          if (
+            item.reviewType ===
             'schedule-document-expired'
           ) {
             const pageRange =
@@ -1919,6 +2158,67 @@ function renderProjectIntakeReviewList(
                   Это не автоматическая ошибка проекта:
                   инженер должен подтвердить, актуален ли график.
                 </small>
+              </article>
+            `;
+          }
+
+          if (
+            item.reviewType ===
+            'schedule-date-validation'
+          ) {
+            const pageRange =
+              item.startPage ===
+                item.endPage
+                ? `стр. ${item.startPage}`
+                : `стр. ${item.startPage}–${item.endPage}`;
+
+            return `
+              <article class="project-intake-review-item">
+                <span class="project-intake-review-badge">
+                  Проверка дат ГПР
+                </span>
+
+                <strong>
+                  Найдены сомнительные даты после OCR
+                </strong>
+
+                <p>
+                  ${escapeProjectIntakeHtml(
+                    item.fileName
+                  )} ·
+                  ${escapeProjectIntakeHtml(
+                    pageRange
+                  )}
+                </p>
+
+                <small>
+                  Принятые даты:
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.acceptedDateValues
+                    ) &&
+                    item.acceptedDateValues.length > 0
+                      ? item.acceptedDateValues.join(', ')
+                      : '—'
+                  )}.
+                  Отклонённые значения:
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(
+                      item.rejectedDateValues
+                    ) &&
+                    item.rejectedDateValues.length > 0
+                      ? item.rejectedDateValues.join(', ')
+                      : '—'
+                  )}.
+                </small>
+
+                <p class="project-intake-review-hint">
+                  ${escapeProjectIntakeHtml(
+                    Array.isArray(item.reasons)
+                      ? item.reasons.join(' ')
+                      : 'Инженеру необходимо проверить даты по исходной странице.'
+                  )}
+                </p>
               </article>
             `;
           }
@@ -2035,6 +2335,7 @@ function renderProjectIntakeReviewList(
 
                 <strong>
                   ${escapeProjectIntakeHtml(
+                    item.topicLabel ||
                     item.typeLabel
                   )}
                 </strong>
@@ -2086,8 +2387,15 @@ function renderProjectIntakeReviewList(
                 </blockquote>
 
                 <p class="project-intake-review-hint">
-                  По тексту документа выявлен признак внешней зависимости.
-                  Рекомендуется проверить наличие и статус соответствующего согласования.
+                  ${
+                    item.intent ===
+                      'contractual-requirement'
+                      ? 'Это требование документа, а не подтверждение выполненного согласования.'
+                      : item.intent ===
+                          'completed'
+                        ? 'В документе указано, что согласование выполнено. Рекомендуется проверить подтверждающий документ и актуальность.'
+                        : 'По тексту документа выявлен признак внешней зависимости. Рекомендуется проверить наличие и статус соответствующего согласования.'
+                  }
                 </p>
               </article>
             `;
@@ -2477,11 +2785,18 @@ async function runBuildMindProjectIntake() {
     unreadablePagesCount:
       0,
 
+    partial:
+      false,
+
     worksCount:
       0,
 
+    works: [],
+
     materialsCount:
       0,
+
+    materials: [],
 
     commercialDocumentsCount:
       0,
@@ -2649,7 +2964,33 @@ async function runBuildMindProjectIntake() {
 
         ocrPages,
 
+        ocrFastPages:
+          Array.isArray(analyzed.ocrFastPages)
+            ? analyzed.ocrFastPages
+            : [],
+
+        ocrDetailPages:
+          Array.isArray(analyzed.ocrDetailPages)
+            ? analyzed.ocrDetailPages
+            : [],
+
+        ocrLimitReason:
+          analyzed.ocrLimitReason || '',
+
         unreadablePages,
+
+        works:
+          Array.isArray(analyzed.works)
+            ? analyzed.works
+            : [],
+
+        materials:
+          Array.isArray(analyzed.materials)
+            ? analyzed.materials
+            : [],
+
+        pdfTableAnalysis:
+          analyzed.pdfTableAnalysis || null,
 
         requiresReview:
           classification
@@ -2674,8 +3015,19 @@ async function runBuildMindProjectIntake() {
       result.workVolumeSectionsCount +=
         sections.filter(
           function (section) {
-            return section.kind ===
-              'work-volume';
+            return (
+              section.kind ===
+                'work-volume' ||
+              (
+                Array.isArray(
+                  section.secondaryKinds
+                ) &&
+                section.secondaryKinds
+                  .includes(
+                    'work-volume'
+                  )
+              )
+            );
           }
         ).length;
 
@@ -2729,6 +3081,42 @@ async function runBuildMindProjectIntake() {
           }
         );
 
+      sections
+        .filter(
+          function (section) {
+            return (
+              section.kind ===
+                'schedule' &&
+              section
+                .dateValidation
+                ?.status ===
+                'review'
+            );
+          }
+        )
+        .forEach(
+          function (section) {
+            result.reviewItems.push({
+              reviewType:
+                'schedule-date-validation',
+              fileName:
+                documentItem.file.name,
+              startPage:
+                section.startPage,
+              endPage:
+                section.endPage,
+              acceptedDateValues:
+                section.dateValues || [],
+              rejectedDateValues:
+                section.rejectedDateValues || [],
+              reasons:
+                section
+                  .dateValidation
+                  ?.reasons || []
+            });
+          }
+        );
+
       if (unreadablePages.length > 0) {
         result.reviewItems.push({
           reviewType: 'ocr-gap',
@@ -2740,19 +3128,42 @@ async function runBuildMindProjectIntake() {
             documentItem
               .analysis
               ?.ocrUnavailableReason ||
+            documentItem
+              .analysis
+              ?.ocrLimitReason ||
             'Текст страницы не удалось распознать.'
         });
       }
 
-      result.worksCount +=
-        analyzed
-          .works
-          .length;
+      result.works.push(
+        ...analyzed.works.map(
+          function (candidate) {
+            return {
+              ...candidate,
+              fileName:
+                documentItem.file.name
+            };
+          }
+        )
+      );
 
-      result.materialsCount +=
-        analyzed
-          .materials
-          .length;
+      result.materials.push(
+        ...analyzed.materials.map(
+          function (candidate) {
+            return {
+              ...candidate,
+              fileName:
+                documentItem.file.name
+            };
+          }
+        )
+      );
+
+      result.worksCount =
+        result.works.length;
+
+      result.materialsCount =
+        result.materials.length;
 
       result.reviewItems.push(
         ...getProjectIntakeScheduleReviewItems(
@@ -2789,7 +3200,7 @@ async function runBuildMindProjectIntake() {
             )
         );
 
-      const commercialSections =
+      const hasCommercialSection =
         sections.filter(
           function (section) {
             return [
@@ -2800,12 +3211,12 @@ async function runBuildMindProjectIntake() {
               section.kind
             );
           }
-        ).length;
+        ).length > 0;
 
-      if (commercialSections > 0) {
+      if (hasCommercialSection) {
         result
           .commercialDocumentsCount +=
-          commercialSections;
+          1;
       } else if (
         [
           'estimate',
@@ -2905,8 +3316,50 @@ async function runBuildMindProjectIntake() {
         );
     }
 
+    const qualityEvaluation =
+      window.BuildMindProjectIntakeQuality &&
+      typeof window
+        .BuildMindProjectIntakeQuality
+        .evaluateResult === 'function'
+        ? window
+            .BuildMindProjectIntakeQuality
+            .evaluateResult(result)
+        : {
+            status:
+              result.unreadablePagesCount > 0
+                ? 'blocked'
+                : 'complete',
+            issues: []
+          };
+
+    result.qualityStatus =
+      qualityEvaluation.status;
+
+    result.qualityIssues =
+      Array.isArray(
+        qualityEvaluation.issues
+      )
+        ? qualityEvaluation.issues
+        : [];
+
+    result.reviewItems.unshift(
+      ...result.qualityIssues.map(
+        function (issue) {
+          return {
+            ...issue,
+            reviewType:
+              'analysis-quality'
+          };
+        }
+      )
+    );
+
     projectIntakeLastResult =
       result;
+
+    result.partial =
+      result.unreadablePagesCount > 0 ||
+      result.qualityStatus === 'blocked';
 
     renderProjectIntake(
       result
@@ -2915,10 +3368,29 @@ async function runBuildMindProjectIntake() {
     setProjectIntakeText(
       'projectIntakeStatus',
 
-      `${intakeT(
-        'intake.complete'
-      )} ` +
-      'Автоматически найденные выводы требуют инженерной проверки.'
+      result.unreadablePagesCount > 0
+        ? (
+            'Анализ завершён не полностью: ' +
+            `не прочитано страниц — ${result.unreadablePagesCount}. ` +
+            'Проверьте сообщение OCR и запустите анализ повторно.'
+          )
+        : result.qualityStatus ===
+            'blocked'
+          ? (
+              'Анализ не прошёл контроль качества. ' +
+              'BuildMind не выдаёт ложный итог: проверьте блок справа.'
+            )
+          : result.qualityStatus ===
+              'review'
+            ? (
+                'Анализ выполнен, но отдельные результаты требуют инженерной проверки.'
+              )
+        : (
+            `${intakeT(
+              'intake.complete'
+            )} ` +
+            'Автоматически найденные выводы требуют инженерной проверки.'
+          )
     );
 
     if (
