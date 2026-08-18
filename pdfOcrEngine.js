@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF OCR ENGINE — V1.3
+   BUILDMIND PDF OCR ENGINE — V1.4
 
    OCR выполняется локально в браузере. Файл не отправляется
    в BuildMind или на прикладной сервер. PDF.js сначала
@@ -10,13 +10,19 @@
    ================================================== */
 
 const BUILDMIND_PDF_OCR_VERSION =
-  'pdf-ocr-v1.3';
+  'pdf-ocr-v1.4';
 
 const PDF_OCR_DEFAULT_MIN_TEXT_LENGTH =
   60;
 
 const PDF_OCR_DEFAULT_SCALE =
   1.65;
+
+const PDF_OCR_DEFAULT_FAST_SCALE =
+  1.33;
+
+const PDF_OCR_MIN_RENDER_SCALE =
+  0.5;
 
 const PDF_OCR_MAX_PIXELS =
   7000000;
@@ -25,7 +31,47 @@ const PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS =
   90000;
 
 const PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS =
-  300000;
+  120000;
+
+/*
+ * Важное свойство BuildMind: ZIP должен быть самодостаточным.
+ * Не полагаемся на jsDelivr или другой внешний CDN во время
+ * распознавания проектного PDF.
+ */
+const PDF_OCR_LOCAL_ASSET_PATHS =
+  Object.freeze({
+    workerPath:
+      'vendor/tesseract/worker.min.js',
+    corePath:
+      'vendor/tesseract-core',
+    langPath:
+      'vendor/tessdata/4.0.0_best_int'
+  });
+
+function getPdfOcrLocalAssetOptions(
+  overrides = {}
+) {
+  return {
+    workerPath:
+      overrides.workerPath ||
+      PDF_OCR_LOCAL_ASSET_PATHS.workerPath,
+    corePath:
+      overrides.corePath ||
+      PDF_OCR_LOCAL_ASSET_PATHS.corePath,
+    langPath:
+      overrides.langPath ||
+      PDF_OCR_LOCAL_ASSET_PATHS.langPath,
+    workerBlobURL:
+      typeof overrides.workerBlobURL ===
+        'boolean'
+        ? overrides.workerBlobURL
+        : false,
+    cacheMethod:
+      overrides.cacheMethod || 'write',
+    gzip:
+      overrides.gzip !== false
+  };
+}
 
 function createPdfOcrControlError(
   message,
@@ -273,7 +319,11 @@ function getPdfOcrRenderScale(
   const safeHeight =
     Math.max(1, Number(height) || 1);
   const safeScale =
-    Math.max(1, Number(requestedScale) || 1);
+    Math.max(
+      PDF_OCR_MIN_RENDER_SCALE,
+      Number(requestedScale) ||
+        PDF_OCR_MIN_RENDER_SCALE
+    );
 
   const requestedPixels =
     safeWidth *
@@ -321,6 +371,40 @@ async function createPdfOcrSession(
   let activePageNumber = null;
   let activeProgress = null;
 
+  const reportWorkerProgress =
+    function (message) {
+      const handler =
+        typeof activeProgress === 'function'
+          ? activeProgress
+          : typeof options.onInitializationProgress ===
+              'function'
+            ? options.onInitializationProgress
+            : null;
+
+      if (!handler) {
+        return;
+      }
+
+      handler({
+        stage:
+          activePageNumber
+            ? 'recognition'
+            : 'initialization',
+        pageNumber:
+          activePageNumber,
+        status:
+          message?.status ||
+          'recognizing text',
+        progress:
+          Number(message?.progress) || 0
+      });
+    };
+
+  const localAssetOptions =
+    getPdfOcrLocalAssetOptions(
+      options
+    );
+
   let pendingWorker = null;
 
   const workerPromise =
@@ -332,25 +416,9 @@ async function createPdfOcrSession(
       ],
       1,
       {
-        logger(message) {
-          if (
-            typeof activeProgress !==
-            'function'
-          ) {
-            return;
-          }
-
-          activeProgress({
-            pageNumber:
-              activePageNumber,
-            status:
-              message?.status ||
-              'recognizing text',
-            progress:
-              Number(message?.progress) ||
-              0
-          });
-        }
+        ...localAssetOptions,
+        logger:
+          reportWorkerProgress
       }
       )
     ).then(function (createdWorker) {
@@ -529,14 +597,27 @@ async function createPdfOcrSession(
         null;
 
       try {
+        const includeLayout =
+          recognitionOptions.includeLayout !==
+          false;
+
+        const recognitionParameters =
+          recognitionOptions.tesseractOptions &&
+          typeof recognitionOptions
+            .tesseractOptions === 'object'
+            ? recognitionOptions
+                .tesseractOptions
+            : {};
+
         const recognition =
           await runPdfOcrControlledOperation(
             worker.recognize(
               canvas,
-              {},
+              recognitionParameters,
               {
                 text: true,
-                blocks: true
+                blocks:
+                  includeLayout
               }
             ),
             {
@@ -560,9 +641,11 @@ async function createPdfOcrSession(
           );
 
         const layoutWords =
-          extractPdfOcrLayoutWords(
-            recognition?.data?.blocks
-          );
+          includeLayout
+            ? extractPdfOcrLayoutWords(
+                recognition?.data?.blocks
+              )
+            : [];
 
         return {
           success: true,
@@ -581,6 +664,7 @@ async function createPdfOcrSession(
                 ?.data
                 ?.confidence
             ) || 0,
+          includeLayout,
           layoutWords,
           scale,
           width:
@@ -609,8 +693,14 @@ const BuildMindPdfOcrApi = {
     PDF_OCR_DEFAULT_MIN_TEXT_LENGTH,
   defaultPageTimeoutMs:
     PDF_OCR_DEFAULT_PAGE_TIMEOUT_MS,
+  defaultFastScale:
+    PDF_OCR_DEFAULT_FAST_SCALE,
   defaultInitializationTimeoutMs:
     PDF_OCR_DEFAULT_INITIALIZATION_TIMEOUT_MS,
+  localAssetPaths:
+    PDF_OCR_LOCAL_ASSET_PATHS,
+  getLocalAssetOptions:
+    getPdfOcrLocalAssetOptions,
   extractLayoutWords:
     extractPdfOcrLayoutWords,
   isAvailable:

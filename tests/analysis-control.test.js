@@ -76,6 +76,30 @@ assert.equal(
 );
 
 assert.equal(
+  app.includes(
+    'PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS'
+  ),
+  true,
+  'Весь OCR-документ должен иметь общий лимит времени.'
+);
+
+assert.equal(
+  app.includes(
+    'getProjectDocumentPrioritizedOcrPages'
+  ),
+  true,
+  'Сканированный PDF должен начинаться с быстрого поиска структуры.'
+);
+
+assert.equal(
+  app.includes(
+    "mode === 'detail'"
+  ),
+  true,
+  'Точный OCR должен быть отделён от быстрого прохода.'
+);
+
+assert.equal(
   intake.includes(
     'shouldRetryOcr'
   ),
@@ -98,6 +122,41 @@ assert.equal(
   true,
   'Перед Project Intake должен подключаться анализатор PDF-таблиц.'
 );
+
+assert.equal(
+  /https:\/\/cdn\.(?:jsdelivr|sheetjs)/.test(index),
+  false,
+  'Рабочий ZIP не должен зависеть от внешнего CDN.'
+);
+
+[
+  'vendor/pdfjs/pdf.min.mjs',
+  'vendor/pdfjs/pdf.worker.min.mjs',
+  'vendor/xlsx/xlsx.full.min.js',
+  'vendor/tesseract/tesseract.min.js',
+  'vendor/tesseract/worker.min.js',
+  'vendor/tesseract-core/tesseract-core-lstm.wasm.js',
+  'vendor/tesseract-core/tesseract-core-lstm.wasm',
+  'vendor/tesseract-core/tesseract-core-simd-lstm.wasm.js',
+  'vendor/tesseract-core/tesseract-core-simd-lstm.wasm',
+  'vendor/tesseract-core/tesseract-core-relaxedsimd-lstm.wasm.js',
+  'vendor/tesseract-core/tesseract-core-relaxedsimd-lstm.wasm',
+  'vendor/tessdata/4.0.0_best_int/rus.traineddata.gz',
+  'vendor/tessdata/4.0.0_best_int/eng.traineddata.gz'
+].forEach(function (relativePath) {
+  const filePath = path.join(root, relativePath);
+
+  assert.equal(
+    fs.existsSync(filePath),
+    true,
+    `В ZIP должен входить ${relativePath}.`
+  );
+
+  assert.ok(
+    fs.statSync(filePath).size > 0,
+    `${relativePath} не должен быть пустым.`
+  );
+});
 
 const pdfAnalyzerSource =
   intake.slice(
@@ -162,7 +221,7 @@ const nativeStage = app.indexOf(
 );
 
 const ocrStage = app.indexOf(
-  'Этап 2: последовательно распознаём'
+  'Этап 2: двухпроходный локальный OCR'
 );
 
 assert.ok(nativeStage >= 0);

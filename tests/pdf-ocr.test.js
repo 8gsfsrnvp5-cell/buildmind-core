@@ -28,8 +28,30 @@ async function run() {
 
   assert.ok(
     pdfOcr.defaultInitializationTimeoutMs >=
-      300000,
-    'Первому подключению OCR нужно отдельное увеличенное время.'
+      60000 &&
+      pdfOcr.defaultInitializationTimeoutMs <=
+        120000,
+    'Локальный OCR не должен ждать внешнюю сеть пять минут.'
+  );
+
+  const localAssetOptions =
+    pdfOcr.getLocalAssetOptions();
+
+  assert.equal(
+    localAssetOptions.workerPath,
+    'vendor/tesseract/worker.min.js'
+  );
+  assert.equal(
+    localAssetOptions.corePath,
+    'vendor/tesseract-core'
+  );
+  assert.equal(
+    localAssetOptions.langPath,
+    'vendor/tessdata/4.0.0_best_int'
+  );
+  assert.equal(
+    localAssetOptions.workerBlobURL,
+    false
   );
 
   const limitedScale =
@@ -112,6 +134,8 @@ async function run() {
 
   let terminated = false;
   let rendered = false;
+  const initializationUpdates = [];
+  const recognizeCalls = [];
 
   global.window = {
     Tesseract: {
@@ -129,6 +153,27 @@ async function run() {
           typeof options.logger,
           'function'
         );
+        assert.equal(
+          options.workerPath,
+          'vendor/tesseract/worker.min.js'
+        );
+        assert.equal(
+          options.corePath,
+          'vendor/tesseract-core'
+        );
+        assert.equal(
+          options.langPath,
+          'vendor/tessdata/4.0.0_best_int'
+        );
+        assert.equal(
+          options.workerBlobURL,
+          false
+        );
+
+        options.logger({
+          status: 'loading language traineddata',
+          progress: 0.5
+        });
 
         return {
           async recognize(
@@ -140,16 +185,12 @@ async function run() {
               typeof canvas,
               'object'
             );
-            assert.deepEqual(
+            recognizeCalls.push({
               recognizeOptions,
-              {}
-            );
+              outputOptions
+            });
             assert.equal(
               outputOptions.text,
-              true
-            );
-            assert.equal(
-              outputOptions.blocks,
               true
             );
 
@@ -222,7 +263,20 @@ async function run() {
   };
 
   const session =
-    await pdfOcr.createSession();
+    await pdfOcr.createSession({
+      onInitializationProgress(update) {
+        initializationUpdates.push(update);
+      }
+    });
+
+  assert.equal(
+    initializationUpdates.length,
+    1
+  );
+  assert.equal(
+    initializationUpdates[0].stage,
+    'initialization'
+  );
 
   const recognized =
     await session.recognizePage(
@@ -267,6 +321,48 @@ async function run() {
       }
     ),
     ['ВЕДОМОСТЬ', 'РАБОТ']
+  );
+
+  const quickRecognition =
+    await session.recognizePage(
+      {
+        getViewport({
+          scale
+        }) {
+          return {
+            width: 1000 * scale,
+            height: 1400 * scale
+          };
+        },
+
+        render() {
+          return {
+            promise:
+              Promise.resolve()
+          };
+        }
+      },
+      13,
+      {
+        includeLayout: false
+      }
+    );
+
+  assert.equal(
+    quickRecognition.includeLayout,
+    false
+  );
+  assert.deepEqual(
+    quickRecognition.layoutWords,
+    []
+  );
+  assert.equal(
+    recognizeCalls[0].outputOptions.blocks,
+    true
+  );
+  assert.equal(
+    recognizeCalls[1].outputOptions.blocks,
+    false
   );
 
   await session.terminate();

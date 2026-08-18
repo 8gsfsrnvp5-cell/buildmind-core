@@ -1229,8 +1229,12 @@ async function analyzeProjectIntakePdf(
   const shouldRetryOcr =
     Boolean(
       previousAnalysis?.success &&
-      previousAnalysis
-        .ocrUnavailableReason &&
+      (
+        previousAnalysis
+          .ocrUnavailableReason ||
+        previousAnalysis
+          .ocrLimitReason
+      ) &&
       Array.isArray(
         previousAnalysis
           .ocrAttemptedPages
@@ -1244,7 +1248,16 @@ async function analyzeProjectIntakePdf(
         ) ||
         previousAnalysis
           .ocrPages
-          .length === 0
+          .length === 0 ||
+        (
+          Array.isArray(
+            previousAnalysis
+              .ocrSkippedPages
+          ) &&
+          previousAnalysis
+            .ocrSkippedPages
+            .length > 0
+        )
       )
     );
 
@@ -1365,16 +1378,64 @@ async function analyzeProjectIntakePdf(
             .ocrPages
         : [],
 
-    unreadablePages:
+    ocrFastPages:
       Array.isArray(
         documentItem
           .analysis
-          ?.ocrFailedPages
+          ?.ocrFastPages
       )
         ? documentItem
             .analysis
-            .ocrFailedPages
+            .ocrFastPages
         : [],
+
+    ocrDetailPages:
+      Array.isArray(
+        documentItem
+          .analysis
+          ?.ocrDetailPages
+      )
+        ? documentItem
+            .analysis
+            .ocrDetailPages
+        : [],
+
+    ocrLimitReason:
+      String(
+        documentItem
+          .analysis
+          ?.ocrLimitReason || ''
+      ),
+
+    unreadablePages:
+      Array.from(
+        new Set(
+          [
+            ...(
+              Array.isArray(
+                documentItem
+                  .analysis
+                  ?.ocrFailedPages
+              )
+                ? documentItem
+                    .analysis
+                    .ocrFailedPages
+                : []
+            ),
+            ...(
+              Array.isArray(
+                documentItem
+                  .analysis
+                  ?.ocrSkippedPages
+              )
+                ? documentItem
+                    .analysis
+                    .ocrSkippedPages
+                : []
+            )
+          ]
+        )
+      ),
 
     works:
       Array.isArray(
@@ -1895,7 +1956,20 @@ function renderProjectIntakeDocumentList(
           const ocrText =
             Array.isArray(item.ocrPages) &&
             item.ocrPages.length > 0
-              ? `OCR прочитал страницы: ${item.ocrPages.join(', ')}`
+              ? `Локальный OCR: быстрый проход — ${
+                  Array.isArray(item.ocrFastPages)
+                    ? item.ocrFastPages.length
+                    : 0
+                } стр.; точное чтение таблиц — ${
+                  Array.isArray(item.ocrDetailPages)
+                    ? item.ocrDetailPages.length
+                    : 0
+                } стр.`
+              : '';
+
+          const ocrLimitText =
+            item.ocrLimitReason
+              ? ` ${item.ocrLimitReason}`
               : '';
 
           const extractedEvidenceText =
@@ -1943,7 +2017,7 @@ function renderProjectIntakeDocumentList(
                 ${
                   ocrText
                     ? `<small class="project-intake-ocr-note">${escapeProjectIntakeHtml(
-                        ocrText
+                        ocrText + ocrLimitText
                       )}</small>`
                     : ''
                 }
@@ -2890,6 +2964,19 @@ async function runBuildMindProjectIntake() {
 
         ocrPages,
 
+        ocrFastPages:
+          Array.isArray(analyzed.ocrFastPages)
+            ? analyzed.ocrFastPages
+            : [],
+
+        ocrDetailPages:
+          Array.isArray(analyzed.ocrDetailPages)
+            ? analyzed.ocrDetailPages
+            : [],
+
+        ocrLimitReason:
+          analyzed.ocrLimitReason || '',
+
         unreadablePages,
 
         works:
@@ -3041,6 +3128,9 @@ async function runBuildMindProjectIntake() {
             documentItem
               .analysis
               ?.ocrUnavailableReason ||
+            documentItem
+              .analysis
+              ?.ocrLimitReason ||
             'Текст страницы не удалось распознать.'
         });
       }
