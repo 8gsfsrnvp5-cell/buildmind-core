@@ -3317,6 +3317,7 @@ if (
         ocrWarning
       );
     }
+
     if (result.ocrLimitReason) {
       const ocrLimitWarning =
         document.createElement('p');
