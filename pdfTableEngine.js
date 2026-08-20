@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF TABLE ENGINE — V1
+   BUILDMIND PDF TABLE ENGINE — V1.1
 
    Преобразует OCR-слова с координатами в строки,
    извлекает только явно присутствующие позиции ВОР
@@ -9,7 +9,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_TABLE_ENGINE_VERSION =
-  'pdf-table-engine-v1';
+  'pdf-table-engine-v1.1';
 
 const PDF_TABLE_UNIT_SOURCE =
   '(?:п\\.?\\s*м\\.?|пог\\.?\\s*м\\.?|м[23²³]?|км|шт\\.?|штук|компл\\.?|комплект(?:ов)?|кг|т|л|рул\\.?|рулон)';
@@ -980,6 +980,37 @@ function analyzePdfTablePages(
           context.workTable
         );
       });
+  const contextSections =
+    contexts.map(function (context) {
+      return {
+        sectionId:
+          context.section?.id || null,
+        sectionKind:
+          context.section?.kind || null,
+        schedule:
+          context.schedule,
+        workTable:
+          context.workTable,
+        pageNumbers:
+          Array.from(
+            context.pageNumbers
+          ).sort(function (first, second) {
+            return first - second;
+          })
+      };
+    });
+  const pagesConsidered =
+    Array.from(
+      new Set(
+        contextSections.flatMap(
+          function (context) {
+            return context.pageNumbers;
+          }
+        )
+      )
+    ).sort(function (first, second) {
+      return first - second;
+    });
   const candidates = [];
 
   contexts.forEach(function (context) {
@@ -1024,6 +1055,14 @@ function analyzePdfTablePages(
     version:
       BUILDMIND_PDF_TABLE_ENGINE_VERSION,
     sourceDocument,
+    sectionsReceived:
+      sourceSections.length,
+    contextsAnalyzed:
+      contextSections.length,
+    contextSections,
+    pagesConsidered,
+    candidateRowsCount:
+      uniqueCandidates.length,
     works,
     materials,
     uncertain,
