@@ -117,7 +117,7 @@ assert.equal(
 
 assert.equal(
   index.includes(
-    'pdfTableEngine.js?v=1'
+    'pdfTableEngine.js?v=2'
   ),
   true,
   'Перед Project Intake должен подключаться анализатор PDF-таблиц.'
@@ -194,6 +194,22 @@ assert.equal(
 
 assert.equal(
   intake.includes(
+    'Результат не считается готовым.'
+  ),
+  true,
+  'Пустой downstream-результат должен получать понятное сообщение.'
+);
+
+assert.equal(
+  intake.includes(
+    'extractedPagesCount'
+  ),
+  true,
+  'Контроль качества должен знать, сколько страниц фактически прочитано.'
+);
+
+assert.equal(
+  intake.includes(
     'result.reviewItems.unshift('
   ),
   true,
@@ -206,6 +222,22 @@ assert.equal(
   ),
   true,
   'Извлечение строк PDF должно использовать координаты OCR.'
+);
+
+assert.equal(
+  pdfTable.includes(
+    'pagesConsidered'
+  ),
+  true,
+  'Даже пустой результат должен показывать, какие страницы получил табличный анализатор.'
+);
+
+assert.equal(
+  pdfTable.includes(
+    'contextsAnalyzed'
+  ),
+  true,
+  'Пустой результат должен отличать отсутствие контекста от ошибки разбора строк.'
 );
 
 assert.equal(

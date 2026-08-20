@@ -1,11 +1,17 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.4
+   BUILDMIND PROJECT INTAKE QUALITY — V1.5
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.4';
+  'project-intake-quality-v1.5';
+
+const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
+  10;
+
+const PROJECT_INTAKE_QUALITY_MIN_READ_PAGES =
+  5;
 
 const PROJECT_INTAKE_QUALITY_KIND_RULES = [
   {
@@ -1771,11 +1777,46 @@ function evaluateProjectIntakeQualityResult(
       Array.isArray(documentItem?.works)
         ? documentItem.works
         : [];
+    const materials =
+      Array.isArray(documentItem?.materials)
+        ? documentItem.materials
+        : [];
+    const ocrPages =
+      Array.isArray(documentItem?.ocrPages)
+        ? documentItem.ocrPages
+        : [];
+    const extractedPagesCount =
+      Math.max(
+        0,
+        Number(
+          documentItem?.extractedPagesCount
+        ) || 0
+      );
+    const pagesWithText =
+      Math.max(
+        0,
+        Number(documentItem?.pagesWithText) || 0
+      );
     const totalPages =
       Math.max(
         1,
         Number(documentItem?.totalPages) || 1
       );
+    const readPagesCount =
+      Math.max(
+        ocrPages.length,
+        extractedPagesCount,
+        pagesWithText
+      );
+    const minimumReadablePages =
+      Math.min(
+        totalPages,
+        PROJECT_INTAKE_QUALITY_MIN_READ_PAGES
+      );
+    const largeReadablePdf =
+      totalPages >=
+        PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES &&
+      readPagesCount >= minimumReadablePages;
     const maximumReasonableSections =
       Math.max(
         6,
@@ -1864,13 +1905,57 @@ function evaluateProjectIntakeQualityResult(
     ) {
       issues.push({
         code: 'schedule-rows-empty',
-        severity: 'review',
+        severity: 'blocked',
         fileName:
           documentItem.fileName || '',
         title:
           'ГПР найден, но строки графика не извлечены',
         message:
-          'Нужно проверить распознавание названий работ и дат внутри ГПР.'
+          'Анализ не завершён: BuildMind не извлёк названия работ и даты из найденного ГПР.'
+      });
+    }
+
+    if (
+      largeReadablePdf &&
+      !hasWorkVolume &&
+      !hasSchedule &&
+      works.length === 0 &&
+      materials.length === 0
+    ) {
+      const tablePagesConsidered =
+        Array.isArray(
+          documentItem
+            ?.pdfTableAnalysis
+            ?.pagesConsidered
+        )
+          ? documentItem
+              .pdfTableAnalysis
+              .pagesConsidered
+          : [];
+
+      issues.push({
+        code:
+          'downstream-extraction-empty',
+        severity: 'blocked',
+        fileName:
+          documentItem.fileName || '',
+        title:
+          'Страницы прочитаны, но инженерные данные не извлечены',
+        message:
+          'Анализ не завершён: страницы прочитаны, но строки работ и материалы не извлечены. Проверьте границы ГПР/ВОР и передачу страниц в табличный анализатор.',
+        totalPages,
+        readPagesCount,
+        sectionKinds:
+          sections.map(function (section) {
+            return section?.kind || 'other';
+          }),
+        tableContextsAnalyzed:
+          Number(
+            documentItem
+              ?.pdfTableAnalysis
+              ?.contextsAnalyzed
+          ) || 0,
+        tablePagesConsidered
       });
     }
   });
