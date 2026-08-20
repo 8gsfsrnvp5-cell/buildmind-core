@@ -189,6 +189,28 @@ function run() {
     true
   );
   assert.equal(
+    result.sectionsReceived,
+    2
+  );
+  assert.equal(
+    result.contextsAnalyzed,
+    2
+  );
+  assert.deepEqual(
+    result.pagesConsidered,
+    [33, 34, 39, 40, 41]
+  );
+  assert.equal(
+    result.contextSections[0]
+      .schedule,
+    true
+  );
+  assert.equal(
+    result.contextSections[1]
+      .workTable,
+    true
+  );
+  assert.equal(
     result.works.length,
     3
   );
