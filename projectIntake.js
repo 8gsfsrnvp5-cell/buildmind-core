@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.5
+   BUILDMIND PROJECT INTAKE — V1.6
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.5';
+  'project-intake-v1.6';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -2962,6 +2962,25 @@ async function runBuildMindProjectIntake() {
               ?.totalPages
           ) || 0,
 
+        extractedPagesCount:
+          Array.isArray(
+            documentItem
+              .analysis
+              ?.extractedPages
+          )
+            ? documentItem
+                .analysis
+                .extractedPages
+                .length
+            : 0,
+
+        pagesWithText:
+          Number(
+            documentItem
+              .analysis
+              ?.pagesWithText
+          ) || 0,
+
         ocrPages,
 
         ocrFastPages:
@@ -3377,8 +3396,22 @@ async function runBuildMindProjectIntake() {
         : result.qualityStatus ===
             'blocked'
           ? (
-              'Анализ не прошёл контроль качества. ' +
-              'BuildMind не выдаёт ложный итог: проверьте блок справа.'
+              result.qualityIssues.some(
+                function (issue) {
+                  return issue.code ===
+                    'downstream-extraction-empty';
+                }
+              )
+                ? (
+                    'Анализ не завершён: страницы прочитаны, ' +
+                    'но строки работ и материалы не извлечены. ' +
+                    'Проверьте разделы ГПР/ВОР и страницы-источники. ' +
+                    'Результат не считается готовым.'
+                  )
+                : (
+                    'Анализ не прошёл контроль качества. ' +
+                    'BuildMind не выдаёт ложный итог: проверьте блок справа.'
+                  )
             )
           : result.qualityStatus ===
               'review'
