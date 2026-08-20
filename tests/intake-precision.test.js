@@ -213,6 +213,99 @@ function run() {
     )
   );
 
+  const emptyDownstreamQuality =
+    intakeQuality.evaluateResult({
+      unreadablePagesCount: 0,
+      approvals: [],
+      documents: [
+        {
+          fileName:
+            'ROAD-REAL-41P.pdf',
+          totalPages: 41,
+          extractedPagesCount: 41,
+          pagesWithText: 41,
+          ocrPages:
+            Array.from(
+              {
+                length: 40
+              },
+              function (_, index) {
+                return index + 1;
+              }
+            ),
+          kind: 'agreement',
+          sections: [
+            {
+              kind: 'agreement',
+              startPage: 1,
+              endPage: 41
+            }
+          ],
+          works: [],
+          materials: [],
+          pdfTableAnalysis: {
+            sectionsReceived: 1,
+            contextsAnalyzed: 0,
+            pagesConsidered: []
+          }
+        }
+      ]
+    });
+
+  assert.equal(
+    emptyDownstreamQuality.status,
+    'blocked'
+  );
+  assert.ok(
+    emptyDownstreamQuality.issues.some(
+      function (issue) {
+        return issue.code ===
+          'downstream-extraction-empty';
+      }
+    )
+  );
+
+  const scheduleEmptyQuality =
+    intakeQuality.evaluateResult({
+      unreadablePagesCount: 0,
+      approvals: [],
+      documents: [
+        {
+          fileName:
+            'ROAD-SCHEDULE-EMPTY.pdf',
+          totalPages: 41,
+          extractedPagesCount: 41,
+          sections: [
+            {
+              kind: 'agreement'
+            },
+            {
+              kind: 'schedule'
+            }
+          ],
+          works: [],
+          materials: []
+        }
+      ]
+    });
+
+  assert.equal(
+    scheduleEmptyQuality.status,
+    'blocked'
+  );
+  assert.ok(
+    scheduleEmptyQuality.issues.some(
+      function (issue) {
+        return (
+          issue.code ===
+            'schedule-rows-empty' &&
+          issue.severity ===
+            'blocked'
+        );
+      }
+    )
+  );
+
   const passedQuality =
     intakeQuality.evaluateResult({
       unreadablePagesCount: 0,
