@@ -1758,6 +1758,18 @@ function analyzeWorkVolumeRows(
       tableClassification.id ===
         'schedule-table';
 
+    const isSupplySchedule =
+      isScheduleTable &&
+      /график\s+постав|поставк|\bмтр\b|материал/.test(
+        String(
+          sourceDocument +
+          ' ' +
+          sourceSheet
+        )
+          .toLowerCase()
+          .replace(/ё/g, 'е')
+      );
+
     if (
       isScheduleTable &&
       startDate &&
@@ -1801,6 +1813,23 @@ function analyzeWorkVolumeRows(
       };
     }
 
+    if (isSupplySchedule) {
+      rowClassification = {
+        rowType: 'material',
+        rowLabel:
+          'Позиция графика поставок',
+        confidence: {
+          level: 'medium',
+          label: 'Средняя'
+        },
+        evidence: [
+          'лист определён как график поставок МТР'
+        ],
+        eligibleForAutomaticWorkVolume:
+          false
+      };
+    }
+
     const scheduleReviewReasons = [];
 
     if (isScheduleTable) {
@@ -1825,10 +1854,10 @@ function analyzeWorkVolumeRows(
 
       if (
         Number.isFinite(durationDays) &&
-        durationDays > 180
+        durationDays > 730
       ) {
         scheduleReviewReasons.push(
-          'Продолжительность более 180 календарных дней — проверить год и даты.'
+          'Продолжительность более двух лет — проверить год и даты.'
         );
       }
     }
@@ -1859,10 +1888,12 @@ function analyzeWorkVolumeRows(
       scheduleReviewReasons,
 
       sourceType:
-        tableClassification.id ===
-          'work-volume'
-          ? 'work-volume'
-          : tableClassification.id,
+        isSupplySchedule
+          ? 'supply-schedule'
+          : tableClassification.id ===
+              'work-volume'
+            ? 'work-volume'
+            : tableClassification.id,
 
       tableType:
         tableClassification.id,
