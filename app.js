@@ -6214,6 +6214,13 @@ async function inspectPdfDocument(
                 : PROJECT_DOCUMENT_OCR_FAST_SCALE,
             includeLayout:
               mode === 'detail',
+            tesseractOptions:
+              mode === 'detail'
+                ? {
+                    tessedit_pageseg_mode: '6',
+                    preserve_interword_spaces: '1'
+                  }
+                : {},
             onProgress(progress) {
               const percent =
                 Math.round(

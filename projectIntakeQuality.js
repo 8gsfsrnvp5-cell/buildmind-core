@@ -5,7 +5,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.7';
+  'project-intake-quality-v1.8';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -1846,18 +1846,45 @@ function evaluateProjectIntakeQualityResult(
       sections.some(function (section) {
         return section?.kind === 'schedule';
       });
-    const scheduleWorks =
-      works.filter(function (candidate) {
+    const isSupplyOnlySchedule =
+      hasSchedule &&
+      works.length === 0 &&
+      materials.length > 0 &&
+      materials.every(function (candidate) {
         return (
           candidate?.sourceType ===
-            'pdf-schedule' ||
+            'supply-schedule' ||
           (
             Array.isArray(
               candidate?.sourceTypes
             ) &&
             candidate.sourceTypes.includes(
-              'pdf-schedule'
+              'supply-schedule'
             )
+          )
+        );
+      });
+    const scheduleWorks =
+      works.filter(function (candidate) {
+        const sourceTypes =
+          Array.isArray(candidate?.sourceTypes)
+            ? candidate.sourceTypes
+            : [];
+
+        return (
+          candidate?.sourceType ===
+            'pdf-schedule' ||
+          candidate?.sourceType ===
+            'schedule-table' ||
+          sourceTypes.includes(
+            'pdf-schedule'
+          ) ||
+          sourceTypes.includes(
+            'schedule-table'
+          ) ||
+          (
+            candidate?.startDate &&
+            candidate?.finishDate
           )
         );
       });
@@ -1899,6 +1926,7 @@ function evaluateProjectIntakeQualityResult(
 
     if (
       hasSchedule &&
+      !isSupplyOnlySchedule &&
       scheduleWorks.length === 0
     ) {
       issues.push({
