@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PDF TABLE ENGINE — V1.1
+   BUILDMIND PDF TABLE ENGINE — V1.3
 
    Преобразует OCR-слова с координатами в строки,
    извлекает только явно присутствующие позиции ВОР
@@ -9,7 +9,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_TABLE_ENGINE_VERSION =
-  'pdf-table-engine-v1.2';
+  'pdf-table-engine-v1.3';
 
 const PDF_TABLE_UNIT_SOURCE =
   '(?:п\\.?\\s*м\\.?|пог\\.?\\s*м\\.?|м[23²³]?|км|шт\\.?|штук|компл\\.?|комплект(?:ов)?|кг|т|л|рул\\.?|рулон)';
@@ -255,46 +255,8 @@ function getPdfTableScheduleReferenceYear(
         return year >= 2000 && year <= 2100;
       });
 
-  if (fileYears.length > 0) {
-    return fileYears[fileYears.length - 1];
-  }
-
-  const counts = new Map();
-
-  (Array.isArray(candidates) ? candidates : [])
-    .forEach(function (candidate) {
-      [
-        candidate?.startDate,
-        candidate?.finishDate
-      ].forEach(function (value) {
-        const year =
-          getPdfTableDateYear(value);
-
-        if (
-          Number.isInteger(year) &&
-          year >= 2000 &&
-          year <= 2100
-        ) {
-          counts.set(
-            year,
-            Number(counts.get(year) || 0) + 1
-          );
-        }
-      });
-    });
-
-  const ranked =
-    Array.from(counts.entries())
-      .filter(function (entry) {
-        return entry[1] >= 2;
-      })
-      .sort(function (first, second) {
-        return second[1] - first[1] ||
-          first[0] - second[0];
-      });
-
-  return ranked.length > 0
-    ? ranked[0][0]
+  return fileYears.length > 0
+    ? fileYears[fileYears.length - 1]
     : null;
 }
 
@@ -311,18 +273,11 @@ function isPdfTableOcrYearVariant(
     /^20\d{2}$/.test(source) &&
     /^20\d{2}$/.test(reference) &&
     source !== reference &&
-    source.slice(0, 2) ===
-      reference.slice(0, 2) &&
-    source.charAt(3) ===
-      reference.charAt(3) &&
-    Math.abs(
-      Number(source) -
-      Number(reference)
-    ) >= 10 &&
-    Math.abs(
-      Number(source) -
-      Number(reference)
-    ) <= 40
+    source.slice(0, 2) === '20' &&
+    reference.slice(0, 2) === '20' &&
+    source.charAt(3) === reference.charAt(3) &&
+    reference.charAt(2) === '2' &&
+    ['0', '3'].includes(source.charAt(2))
   );
 }
 
@@ -411,7 +366,7 @@ function normalizePdfTableScheduleYears(
             ? candidate.scheduleReviewReasons
             : []
         ),
-        'Год даты исправлен по преобладающему году ГПР; требуется подтверждение инженером.'
+        'Исправлена только типовая OCR-подмена года; требуется подтверждение инженером.'
       ],
       evidence:
         String(candidate.evidence || '') +
@@ -419,7 +374,6 @@ function normalizePdfTableScheduleYears(
     };
   });
 }
-
 
 function isPdfTableHeadingOrTotal(value) {
   const text =
@@ -691,6 +645,354 @@ function getPdfTablePageRows(page) {
   });
 }
 
+function getPdfTableLayoutWords(
+  layoutWords
+) {
+  return (
+    Array.isArray(layoutWords)
+      ? layoutWords
+      : []
+  )
+    .map(function (word) {
+      const bbox =
+        word?.bbox || {};
+      const x0 = Number(bbox.x0);
+      const y0 = Number(bbox.y0);
+      const x1 = Number(bbox.x1);
+      const y1 = Number(bbox.y1);
+      const text =
+        String(word?.text || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      if (
+        !text ||
+        ![x0, y0, x1, y1]
+          .every(Number.isFinite) ||
+        x1 <= x0 ||
+        y1 <= y0
+      ) {
+        return null;
+      }
+
+      return {
+        text,
+        x0,
+        y0,
+        x1,
+        y1,
+        height: y1 - y0,
+        centerY:
+          (y0 + y1) / 2
+      };
+    })
+    .filter(Boolean)
+    .sort(function (first, second) {
+      return first.centerY - second.centerY ||
+        first.x0 - second.x0;
+    });
+}
+
+function groupPdfTableLayoutWordsByLine(
+  words
+) {
+  const groups = [];
+
+  (Array.isArray(words) ? words : [])
+    .forEach(function (word) {
+      const tolerance =
+        Math.max(
+          7,
+          Number(word?.height || 0) * 0.85
+        );
+      const group =
+        groups.find(function (item) {
+          return Math.abs(
+            item.centerY - word.centerY
+          ) <= tolerance;
+        });
+
+      if (!group) {
+        groups.push({
+          centerY: word.centerY,
+          words: [word]
+        });
+        return;
+      }
+
+      group.words.push(word);
+      group.centerY =
+        group.words.reduce(
+          function (sum, item) {
+            return sum + item.centerY;
+          },
+          0
+        ) / group.words.length;
+    });
+
+  return groups
+    .sort(function (first, second) {
+      return first.centerY - second.centerY;
+    });
+}
+
+function getPdfTableGridBoundaries(
+  context
+) {
+  return context?.schedule
+    ? [0, 0.07, 0.57, 0.65, 0.77, 0.89, 1.001]
+    : [0, 0.07, 0.58, 0.66, 0.75, 0.87, 1.001];
+}
+
+function buildPdfTableGridRows(
+  layoutWords,
+  context = {}
+) {
+  const words =
+    getPdfTableLayoutWords(
+      layoutWords
+    );
+
+  if (words.length < 6) {
+    return [];
+  }
+
+  const minX =
+    Math.min(
+      ...words.map(function (word) {
+        return word.x0;
+      })
+    );
+  const maxX =
+    Math.max(
+      ...words.map(function (word) {
+        return word.x1;
+      })
+    );
+  const width =
+    maxX - minX;
+
+  if (!Number.isFinite(width) || width < 120) {
+    return [];
+  }
+
+  const boundaries =
+    getPdfTableGridBoundaries(context)
+      .map(function (ratio) {
+        return minX + width * ratio;
+      });
+
+  return groupPdfTableLayoutWordsByLine(
+    words
+  ).map(function (group, index) {
+    const cells =
+      boundaries
+        .slice(0, -1)
+        .map(function (_, cellIndex) {
+          const left =
+            boundaries[cellIndex];
+          const right =
+            boundaries[cellIndex + 1];
+
+          return group.words
+            .filter(function (word) {
+              const centerX =
+                (word.x0 + word.x1) / 2;
+
+              return centerX >= left &&
+                centerX < right;
+            })
+            .sort(function (first, second) {
+              return first.x0 - second.x0;
+            })
+            .map(function (word) {
+              return word.text;
+            })
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        });
+
+    return {
+      cells,
+      text:
+        cells
+          .filter(Boolean)
+          .join(' | '),
+      sourceRow: index + 1,
+      sourceMethod: 'structured-grid'
+    };
+  }).filter(function (row) {
+    return row.text;
+  });
+}
+
+function hasPdfTableGridWorkName(
+  value
+) {
+  const workName =
+    cleanPdfTableName(value);
+  const normalized =
+    normalizePdfTableText(workName);
+
+  return Boolean(
+    workName &&
+    workName.length >= 3 &&
+    workName.length <= 240 &&
+    /[а-яёa-z]/iu.test(workName) &&
+    !isPdfTableHeadingOrTotal(normalized)
+  );
+}
+
+function parsePdfTableGridVolumeRow(
+  row,
+  context = {}
+) {
+  const cells =
+    Array.isArray(row?.cells)
+      ? row.cells
+      : [];
+  const workName =
+    cleanPdfTableName(cells[1] || '');
+  const unit =
+    normalizePdfTableUnit(cells[2] || '');
+  const quantity =
+    parsePdfTableNumber(cells[3] || '');
+
+  if (
+    !hasPdfTableGridWorkName(workName) ||
+    !unit ||
+    quantity === null ||
+    quantity <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    workName,
+    unit,
+    quantity,
+    ...classifyPdfTableRow(
+      workName,
+      context
+    ),
+    confidence: 'high',
+    evidence:
+      'строка ВОР по координатной сетке таблицы'
+  };
+}
+
+function parsePdfTableGridScheduleRow(
+  row
+) {
+  const cells =
+    Array.isArray(row?.cells)
+      ? row.cells
+      : [];
+  const workName =
+    cleanPdfTableName(cells[1] || '');
+  const unit =
+    normalizePdfTableUnit(cells[2] || '');
+  const quantity =
+    parsePdfTableNumber(cells[3] || '');
+  const startDate =
+    extractPdfTableDates(
+      cells[4] || ''
+    )[0]?.value || '';
+  const finishDate =
+    extractPdfTableDates(
+      cells[5] || ''
+    )[0]?.value || '';
+
+  if (
+    !hasPdfTableGridWorkName(workName) ||
+    !unit ||
+    quantity === null ||
+    quantity <= 0 ||
+    !startDate ||
+    !finishDate
+  ) {
+    return null;
+  }
+
+  return {
+    workName,
+    unit,
+    quantity,
+    startDate,
+    finishDate,
+    rowType: 'work',
+    confidence: 'high',
+    evidence:
+      'строка ГПР по координатной сетке таблицы'
+  };
+}
+
+function extractPdfTableStructuredGridCandidates(
+  page,
+  context,
+  sourceDocument
+) {
+  const rows =
+    buildPdfTableGridRows(
+      page?.layoutWords,
+      context
+    );
+  const seen = new Set();
+
+  return rows
+    .map(function (row) {
+      const parsed =
+        context?.schedule
+          ? parsePdfTableGridScheduleRow(row)
+          : context?.workTable
+            ? parsePdfTableGridVolumeRow(
+                row,
+                context
+              )
+            : null;
+
+      if (!parsed) {
+        return null;
+      }
+
+      const candidate = {
+        ...parsed,
+        pageNumber:
+          Number(page?.pageNumber) || null,
+        pageNumbers: [
+          Number(page?.pageNumber) || null
+        ].filter(Boolean),
+        sourceDocument,
+        sourceRow:
+          row.sourceRow || null,
+        sourceText:
+          String(row.text || '')
+            .slice(0, 320),
+        sourceType:
+          context?.schedule
+            ? 'pdf-schedule'
+            : 'pdf-work-volume',
+        sectionId:
+          context?.section?.id || null,
+        sectionKind:
+          context?.section?.kind || null,
+        requiresEngineerConfirmation: true,
+        decisionStatus: 'requires-review'
+      };
+      const key =
+        getPdfTableCandidateKey(candidate);
+
+      if (seen.has(key)) {
+        return null;
+      }
+
+      seen.add(key);
+      return candidate;
+    })
+    .filter(Boolean);
+}
+
 function parsePdfTableVolumeRow(
   value,
   context = {}
@@ -925,6 +1227,17 @@ function extractPdfTablePageCandidates(
   context,
   sourceDocument
 ) {
+  const structuredCandidates =
+    extractPdfTableStructuredGridCandidates(
+      page,
+      context,
+      sourceDocument
+    );
+
+  if (structuredCandidates.length > 0) {
+    return structuredCandidates;
+  }
+
   const rows =
     getPdfTablePageRows(page);
   const candidates = [];
@@ -1296,6 +1609,8 @@ const BuildMindPdfTableApi = {
     BUILDMIND_PDF_TABLE_ENGINE_VERSION,
   buildRowsFromLayoutWords:
     buildPdfTableRowsFromLayoutWords,
+  buildGridRows:
+    buildPdfTableGridRows,
   parseVolumeRow:
     parsePdfTableVolumeRow,
   parseLayoutVolumeRow:

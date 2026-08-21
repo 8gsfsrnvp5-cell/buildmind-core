@@ -138,6 +138,158 @@ assert.equal(
   true
 );
 
+const safeCorrection = table.normalizeScheduleYears(
+  [
+    {
+      sourceType: 'pdf-schedule',
+      workName: 'Монтаж опоры',
+      startDate: '2024-09-10',
+      finishDate: '2025-03-31'
+    }
+  ],
+  {
+    sourceDocument: 'ГПР 111.pdf'
+  }
+);
+
+assert.equal(
+  safeCorrection[0].startDate,
+  '2024-09-10'
+);
+assert.equal(
+  safeCorrection[0].finishDate,
+  '2025-03-31'
+);
+
+function layoutWord(
+  text,
+  x0,
+  y0
+) {
+  return {
+    text,
+    bbox: {
+      x0,
+      y0,
+      x1: x0 + 28,
+      y1: y0 + 16
+    }
+  };
+}
+
+const structuredVolume = table.analyzePages(
+  [
+    {
+      pageNumber: 1,
+      layoutWords: [
+        layoutWord('3.1.1', 12, 100),
+        layoutWord('Монтаж', 120, 100),
+        layoutWord('светофоров', 190, 100),
+        layoutWord('шт', 575, 100),
+        layoutWord('16', 655, 100),
+        layoutWord('100', 790, 100),
+        layoutWord('1600', 900, 100)
+      ]
+    }
+  ],
+  [
+    {
+      id: 'vor-1',
+      kind: 'work-volume',
+      pageNumbers: [1]
+    }
+  ],
+  {
+    sourceDocument: 'ВОР 111.pdf'
+  }
+);
+
+assert.equal(structuredVolume.works.length, 1);
+assert.equal(
+  structuredVolume.works[0].workName,
+  'Монтаж светофоров'
+);
+assert.equal(
+  structuredVolume.works[0].quantity,
+  16
+);
+
+const structuredSchedule = table.analyzePages(
+  [
+    {
+      pageNumber: 1,
+      layoutWords: [
+        layoutWord('3.1.1', 12, 100),
+        layoutWord('Монтаж', 120, 100),
+        layoutWord('светофоров', 190, 100),
+        layoutWord('шт', 555, 100),
+        layoutWord('13', 655, 100),
+        layoutWord('10.09.2024', 730, 100),
+        layoutWord('31.10.2024', 860, 100)
+      ]
+    }
+  ],
+  [
+    {
+      id: 'gpr-1',
+      kind: 'schedule',
+      pageNumbers: [1]
+    }
+  ],
+  {
+    sourceDocument: 'ГПР 111.pdf'
+  }
+);
+
+assert.equal(structuredSchedule.works.length, 1);
+assert.equal(
+  structuredSchedule.works[0].startDate,
+  '2024-09-10'
+);
+assert.equal(
+  structuredSchedule.works[0].finishDate,
+  '2024-10-31'
+);
+assert.equal(
+  structuredSchedule.works[0].unit,
+  'шт'
+);
+assert.equal(
+  structuredSchedule.works[0].quantity,
+  13
+);
+
+const supplyScheduleQuality =
+  quality.evaluateResult({
+    documents: [
+      {
+        documentRole: 'schedule',
+        sections: [
+          {
+            kind: 'schedule'
+          }
+        ],
+        works: [],
+        materials: [
+          {
+            sourceType: 'supply-schedule'
+          }
+        ],
+        totalPages: 1,
+        pagesWithText: 1,
+        extractedPagesCount: 1,
+        ocrPages: []
+      }
+    ]
+  });
+
+assert.equal(
+  supplyScheduleQuality.issues.some(function (issue) {
+    return issue.code === 'schedule-rows-empty';
+  }),
+  false
+);
+
 const grouped = quality.groupApprovals([
   {
     type: 'approval',
@@ -165,4 +317,4 @@ assert.equal(grouped.length, 1);
 assert.equal(grouped[0].occurrenceCount, 2);
 assert.equal(grouped[0].sourceFiles.length, 2);
 
-console.log('BuildMind real document precision test: PASS');
+console.log('BuildMind scan table structure test: PASS');
