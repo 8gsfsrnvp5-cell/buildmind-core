@@ -5,7 +5,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.5';
+  'project-intake-quality-v1.6';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -1816,7 +1816,22 @@ function evaluateProjectIntakeQualityResult(
     const largeReadablePdf =
       totalPages >=
         PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES &&
-      readPagesCount >= minimumReadablePages;
+      readPagesCount >= minimumReadablePages;    const documentRole =
+      String(documentItem?.documentRole || '');
+
+    const documentKind =
+      String(documentItem?.kind || '');
+
+    const expectedNoDownstream =
+      [
+        'agreement',
+        'project-documentation',
+        'other'
+      ].includes(documentRole) ||
+      [
+        'agreement',
+        'project-documentation'
+      ].includes(documentKind);
     const maximumReasonableSections =
       Math.max(
         6,
@@ -1917,6 +1932,7 @@ function evaluateProjectIntakeQualityResult(
 
     if (
       largeReadablePdf &&
+      !expectedNoDownstream &&
       !hasWorkVolume &&
       !hasSchedule &&
       works.length === 0 &&
