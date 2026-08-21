@@ -2723,6 +2723,74 @@ function applySavedMaterialCandidateReview(
 }
 
 let uploadedProjectDocuments = [];
+let projectDocumentsAnalysisBusy = false;
+
+const PROJECT_DOCUMENT_ROLE_OPTIONS = [
+  { value: 'auto', label: 'Автоопределение' },
+  { value: 'agreement', label: 'Договор' },
+  { value: 'project-documentation', label: 'Проектная документация' },
+  { value: 'work-volume', label: 'ВОР — ведомость объёмов работ' },
+  { value: 'schedule', label: 'ГПР — график производства работ' },
+  { value: 'specification', label: 'Спецификация / материалы' },
+  { value: 'other', label: 'Другой документ' }
+];
+
+function getProjectDocumentRoleOptions() {
+  return PROJECT_DOCUMENT_ROLE_OPTIONS.slice();
+}
+
+function normalizeProjectDocumentRole(value) {
+  const normalized = String(value || 'auto');
+  return PROJECT_DOCUMENT_ROLE_OPTIONS.some(function (option) {
+    return option.value === normalized;
+  }) ? normalized : 'auto';
+}
+
+function inferProjectDocumentRoleFromFile(file) {
+  const fileName =
+    String(file?.name || file || '')
+      .toLowerCase()
+      .replace(/ё/g, 'е');
+
+  if (!fileName) {
+    return 'auto';
+  }
+
+  if (
+    /(?:^|[\s._-])вор(?:[\s._-]|$)/.test(fileName) ||
+    /ведомост[а-я]*\s+(?:объем|обьем)[а-я]*\s+работ/.test(fileName)
+  ) {
+    return 'work-volume';
+  }
+
+  if (
+    /(?:^|[\s._-])гпр(?:[\s._-]|$)/.test(fileName) ||
+    /график[а-я]*\s+производств[а-я]*\s+работ/.test(fileName)
+  ) {
+    return 'schedule';
+  }
+
+  if (
+    /спецификац|ведомост[а-я]*\s+материал/.test(fileName)
+  ) {
+    return 'specification';
+  }
+
+  if (
+    /договор|контракт|соглашени/.test(fileName)
+  ) {
+    return 'agreement';
+  }
+
+  if (
+    /проектн|рабоч[а-я]*\s+документац/.test(fileName)
+  ) {
+    return 'project-documentation';
+  }
+
+  return 'auto';
+}
+
 
 function notifyProjectDocumentsChanged(
   action,
@@ -3021,6 +3089,21 @@ function renderProjectDocuments() {
       'clearDocumentsBtn'
     );
 
+  const analyzeUploadedDocumentsButton =
+    document.getElementById(
+      'analyzeUploadedDocumentsBtn'
+    );
+
+  const selectButton =
+    document.getElementById(
+      'selectDocumentsBtn'
+    );
+
+  const input =
+    document.getElementById(
+      'projectDocumentsInput'
+    );
+
   if (
     !list ||
     !count ||
@@ -3038,7 +3121,24 @@ function renderProjectDocuments() {
     );
 
   clearButton.disabled =
+    projectDocumentsAnalysisBusy ||
     uploadedProjectDocuments.length === 0;
+
+  if (analyzeUploadedDocumentsButton) {
+    analyzeUploadedDocumentsButton.disabled =
+      projectDocumentsAnalysisBusy ||
+      uploadedProjectDocuments.length === 0;
+  }
+
+  if (selectButton) {
+    selectButton.disabled =
+      projectDocumentsAnalysisBusy;
+  }
+
+  if (input) {
+    input.disabled =
+      projectDocumentsAnalysisBusy;
+  }
 
   if (
     uploadedProjectDocuments.length === 0
@@ -3050,7 +3150,9 @@ function renderProjectDocuments() {
   }
 
   message.textContent =
-    'Документы подготовлены к последующему анализу.';
+    projectDocumentsAnalysisBusy
+      ? 'BuildMind анализирует документы…'
+      : 'Назначьте тип каждого файла при необходимости и нажмите «Анализировать сейчас».';
 
   uploadedProjectDocuments.forEach(
     function (documentItem) {
@@ -3108,7 +3210,7 @@ if (
   'analyzing'
 ) {
   status.textContent =
-    'Проверяется';
+    'Распознаётся';
 
   status.classList.add(
     'document-status-analyzing'
@@ -3118,7 +3220,7 @@ if (
   'analyzed'
 ) {
   status.textContent =
-    'Проверен';
+    'Распознан';
 
   status.classList.add(
     'document-status-analyzed'
@@ -3128,14 +3230,14 @@ if (
   'error'
 ) {
   status.textContent =
-    'Ошибка проверки';
+    'Ошибка анализа';
 
   status.classList.add(
     'document-status-error'
   );
 } else {
   status.textContent =
-    'Ожидает анализа';
+    'Ожидает распознавания';
 }
 
       meta.appendChild(type);
@@ -3144,6 +3246,52 @@ if (
 
       main.appendChild(name);
       main.appendChild(meta);
+
+      const roleLabel =
+        document.createElement('label');
+
+      roleLabel.className =
+        'document-role-label';
+
+      roleLabel.textContent =
+        'Назначение файла';
+
+      const roleSelect =
+        document.createElement('select');
+
+      roleSelect.className =
+        'document-role-select';
+
+      roleSelect.dataset.documentId =
+        documentItem.id;
+
+      roleSelect.disabled =
+        projectDocumentsAnalysisBusy;
+
+      getProjectDocumentRoleOptions().forEach(
+        function (option) {
+          const optionElement =
+            document.createElement('option');
+
+          optionElement.value =
+            option.value;
+
+          optionElement.textContent =
+            option.label;
+
+          roleSelect.appendChild(
+            optionElement
+          );
+        }
+      );
+
+      roleSelect.value =
+        normalizeProjectDocumentRole(
+          documentItem.documentRole
+        );
+
+      roleLabel.appendChild(roleSelect);
+      main.appendChild(roleLabel);
 
       if (documentItem.analysis) {
   const analysisResult =
@@ -3164,6 +3312,158 @@ if (
       `${result.pagesWithText} из ` +
       `${result.totalPages} страниц. ` +
       result.pdfType;
+
+    if (
+      result.compositeAnalysis &&
+      Array.isArray(
+        result.compositeAnalysis
+          .meaningfulSections
+      )
+    ) {
+      const sections =
+        result.compositeAnalysis
+          .meaningfulSections;
+
+      const sectionsBlock =
+        document.createElement('div');
+
+      sectionsBlock.className =
+        'document-composite-sections';
+
+      const sectionsTitle =
+        document.createElement('h5');
+
+      sectionsTitle.textContent =
+        result.compositeAnalysis.isComposite
+          ? `Найден составной PDF: ${sections.length} разделов`
+          : `Найдено разделов: ${sections.length}`;
+
+      sectionsBlock.appendChild(
+        sectionsTitle
+      );
+
+      if (sections.length === 0) {
+        const empty =
+          document.createElement('p');
+
+        empty.textContent =
+          'Логические разделы пока не определены.';
+
+        sectionsBlock.appendChild(
+          empty
+        );
+      } else {
+        sections.forEach(
+          function (section) {
+            const row =
+              document.createElement('div');
+
+            row.className =
+              'document-composite-section-row';
+
+            const label =
+              document.createElement('strong');
+
+            label.textContent =
+              section.label;
+
+            const pages =
+              document.createElement('span');
+
+            pages.textContent =
+              section.startPage ===
+                section.endPage
+                ? `страница ${section.startPage}`
+                : `страницы ${section.startPage}–${section.endPage}`;
+
+            const confidence =
+              document.createElement('small');
+
+            const confidenceLabels = {
+              high: 'Высокая уверенность',
+              medium: 'Средняя уверенность',
+              low: 'Требует уточнения'
+            };
+
+            let confidenceText =
+              confidenceLabels[
+                section.confidence
+              ] ||
+              confidenceLabels.low;
+
+            if (
+              section.kind === 'schedule' &&
+              section.dateRange
+            ) {
+              confidenceText +=
+                ` · ${section.dateRange.startDate}` +
+                ` — ${section.dateRange.endDate}`;
+
+              if (
+                section.scheduleStatus ===
+                'expired'
+              ) {
+                confidenceText +=
+                  ' · срок графика прошёл';
+              }
+            }
+
+            confidence.textContent =
+              confidenceText;
+
+            row.appendChild(label);
+            row.appendChild(pages);
+            row.appendChild(confidence);
+            sectionsBlock.appendChild(row);
+          }
+        );
+      }
+
+      main.appendChild(
+        sectionsBlock
+      );
+    }
+
+    if (
+      Array.isArray(result.ocrFailedPages) &&
+      result.ocrFailedPages.length > 0
+    ) {
+      const ocrWarning =
+        document.createElement('p');
+
+      ocrWarning.className =
+        'document-ocr-warning';
+
+      ocrWarning.textContent =
+        'Не удалось прочитать страницы: ' +
+        result.ocrFailedPages.join(', ') +
+        '. Их нужно проверить вручную.';
+
+      main.appendChild(
+        ocrWarning
+      );
+    }
+
+    if (result.ocrLimitReason) {
+      const ocrLimitWarning =
+        document.createElement('p');
+
+      ocrLimitWarning.className =
+        'document-ocr-warning';
+
+      ocrLimitWarning.textContent =
+        result.ocrLimitReason +
+        (
+          Array.isArray(result.ocrSkippedPages) &&
+          result.ocrSkippedPages.length > 0
+            ? ` Не обработано страниц: ${result.ocrSkippedPages.join(', ')}.`
+            : ''
+        );
+
+      main.appendChild(
+        ocrLimitWarning
+      );
+    }
   } else {
     analysisResult.textContent =
       documentItem.analysis.errorMessage ||
@@ -3173,6 +3473,27 @@ if (
   main.appendChild(
     analysisResult
   );
+
+  if (
+    Array.isArray(documentItem.agentReports) &&
+    documentItem.agentReports.length > 0
+  ) {
+    const agentTrace =
+      document.createElement('p');
+
+    agentTrace.className =
+      'document-agent-trace';
+
+    agentTrace.textContent =
+      'Отчёт агентов: ' +
+      documentItem.agentReports
+        .map(function (report) {
+          return report.agentId + ' — ' + report.status;
+        })
+        .join('; ');
+
+    main.appendChild(agentTrace);
+  }
         if (
   documentItem.analysis.success &&
   documentItem.analysis
@@ -3747,6 +4068,9 @@ candidatesTable.appendChild(
       removeButton.dataset.documentId =
         documentItem.id;
 
+      removeButton.disabled =
+        projectDocumentsAnalysisBusy;
+
       card.appendChild(main);
       card.appendChild(removeButton);
       list.appendChild(card);
@@ -3755,6 +4079,10 @@ candidatesTable.appendChild(
 }
 
 function addProjectDocuments(fileList) {
+  if (projectDocumentsAnalysisBusy) {
+    return;
+  }
+
   const allowedExtensions = [
     'pdf',
     'xlsx',
@@ -3793,11 +4121,21 @@ function addProjectDocuments(fileList) {
       );
 
     if (!alreadyExists) {
+      const inferredRole =
+        inferProjectDocumentRoleFromFile(file);
+
       uploadedProjectDocuments.push({
-  id,
-  file,
-  status: 'waiting'
-});
+        id,
+        file,
+        status: 'waiting',
+        documentRole:
+          inferredRole,
+        documentRoleSource:
+          inferredRole === 'auto'
+            ? 'auto'
+            : 'filename',
+        agentReports: []
+      });
 
 addedDocumentIds.push(
   id
@@ -3847,6 +4185,11 @@ function initializeProjectDocuments() {
       'clearDocumentsBtn'
     );
 
+  const analyzeUploadedDocumentsButton =
+    document.getElementById(
+      'analyzeUploadedDocumentsBtn'
+    );
+
   const dropZone =
     document.getElementById(
       'documentsDropZone'
@@ -3888,6 +4231,10 @@ function initializeProjectDocuments() {
  clearButton.addEventListener(
   'click',
   function () {
+    if (projectDocumentsAnalysisBusy) {
+      return;
+    }
+
     const removedDocumentIds =
       uploadedProjectDocuments.map(
         function (documentItem) {
@@ -3906,6 +4253,36 @@ function initializeProjectDocuments() {
   }
 );
 
+  if (analyzeUploadedDocumentsButton) {
+    analyzeUploadedDocumentsButton.addEventListener(
+      'click',
+      function () {
+        if (projectDocumentsAnalysisBusy) {
+          return;
+        }
+
+        if (
+          window.BuildMindProjectIntake &&
+          typeof window.BuildMindProjectIntake.run ===
+            'function'
+        ) {
+          window.BuildMindProjectIntake.run();
+          return;
+        }
+
+        const message =
+          document.getElementById(
+            'documentsMessage'
+          );
+
+        if (message) {
+          message.textContent =
+            'Блок анализа ещё загружается. Повторите через секунду.';
+        }
+      }
+    );
+  }
+
   list.addEventListener(
     'click',
     function (event) {
@@ -3915,6 +4292,10 @@ function initializeProjectDocuments() {
         );
 
       if (!removeButton) {
+        return;
+      }
+
+      if (projectDocumentsAnalysisBusy) {
         return;
       }
 
@@ -3937,6 +4318,57 @@ notifyProjectDocumentsChanged(
   'removed',
   [documentId]
 );
+    }
+  );
+
+  list.addEventListener(
+    'change',
+    function (event) {
+      const roleSelect =
+        event.target.closest('.document-role-select');
+
+      if (!roleSelect || projectDocumentsAnalysisBusy) {
+        return;
+      }
+
+      const documentItem =
+        uploadedProjectDocuments.find(function (item) {
+          return item.id === roleSelect.dataset.documentId;
+        });
+
+      if (!documentItem) {
+        return;
+      }
+
+      const nextRole =
+        normalizeProjectDocumentRole(roleSelect.value);
+
+      if (
+        normalizeProjectDocumentRole(documentItem.documentRole) ===
+        nextRole
+      ) {
+        return;
+      }
+
+      documentItem.documentRole = nextRole;
+      documentItem.documentRoleSource =
+        'user';
+
+      if (
+        documentItem.status === 'analyzed' ||
+        documentItem.status === 'error'
+      ) {
+        documentItem.status = 'waiting';
+        documentItem.analysis = null;
+        documentItem.workVolumeAnalysis = null;
+        documentItem.agentReports = [];
+      }
+
+      renderProjectDocuments();
+      notifyProjectDocumentsChanged(
+        'role-changed',
+        [documentItem.id]
+      );
     }
   );
 
@@ -4718,14 +5150,691 @@ function extractProjectDocumentPageText(
     .trim();
 }
 
+function extractProjectDocumentPageLayout(
+  items
+) {
+  return (
+    Array.isArray(items)
+      ? items
+      : []
+  )
+    .map(function (item) {
+      const text =
+        String(item?.str || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const transform =
+        Array.isArray(item?.transform)
+          ? item.transform
+          : [];
+      const x0 =
+        Number(transform[4]);
+      const baselineY =
+        Number(transform[5]);
+      const width =
+        Math.max(
+          1,
+          Number(item?.width) || 1
+        );
+      const height =
+        Math.max(
+          1,
+          Math.abs(
+            Number(item?.height) ||
+            Number(transform[3]) ||
+            1
+          )
+        );
+
+      if (
+        !text ||
+        !Number.isFinite(x0) ||
+        !Number.isFinite(baselineY)
+      ) {
+        return null;
+      }
+
+      return {
+        text,
+        confidence: 100,
+        bbox: {
+          x0,
+          y0:
+            baselineY - height,
+          x1:
+            x0 + width,
+          y1:
+            baselineY
+        }
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6000);
+}
+
+function notifyProjectDocumentAnalysisProgress(
+  documentItem,
+  detail
+) {
+  const payload = {
+    documentId:
+      documentItem?.id || null,
+    fileName:
+      documentItem?.file?.name || '',
+    stage:
+      detail?.stage || 'text',
+    pageNumber:
+      Number(detail?.pageNumber) || 0,
+    totalPages:
+      Number(detail?.totalPages) || 0,
+    progress:
+      Number(detail?.progress) || 0,
+    message:
+      detail?.message || ''
+  };
+
+  const message =
+    document.getElementById(
+      'documentsMessage'
+    );
+
+  if (message && payload.message) {
+    message.textContent =
+      payload.message;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(
+      'buildmind:pdf-analysis-progress',
+      {
+        detail: payload
+      }
+    )
+  );
+}
+
+function getProjectDocumentCompositeClassification(
+  compositeAnalysis,
+  fallbackClassification
+) {
+  const sections =
+    Array.isArray(
+      compositeAnalysis?.meaningfulSections
+    )
+      ? compositeAnalysis.meaningfulSections
+      : [];
+
+  if (sections.length === 0) {
+    return fallbackClassification;
+  }
+
+  if (compositeAnalysis.isComposite) {
+    return {
+      id: 'composite',
+      label:
+        'Составной PDF / комплект документов',
+      confidence: 'Высокая',
+      matchedKeywords:
+        sections
+          .map(function (section) {
+            return section.label;
+          })
+          .slice(0, 8),
+      sourcePages:
+        sections
+          .flatMap(function (section) {
+            return section.anchorPages || [];
+          })
+          .slice(0, 20)
+    };
+  }
+
+  const section = sections[0];
+
+  const confidenceLabels = {
+    high: 'Высокая',
+    medium: 'Средняя',
+    low: 'Низкая'
+  };
+
+  return {
+    id: section.kind,
+    label: section.label,
+    confidence:
+      confidenceLabels[section.confidence] ||
+      'Низкая',
+    matchedKeywords:
+      section.evidence || [],
+    sourcePages:
+      section.anchorPages || []
+  };
+}
+
+const PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS =
+  90000;
+
+const PROJECT_DOCUMENT_OCR_INITIALIZATION_TIMEOUT_MS =
+  120000;
+
+const PROJECT_DOCUMENT_OCR_FAST_PAGE_TIMEOUT_MS =
+  15000;
+
+const PROJECT_DOCUMENT_OCR_DETAIL_PAGE_TIMEOUT_MS =
+  60000;
+
+const PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS =
+  300000;
+
+const PROJECT_DOCUMENT_FILE_READ_TIMEOUT_MS =
+  30000;
+
+const PROJECT_DOCUMENT_PDF_LOAD_TIMEOUT_MS =
+  120000;
+
+const PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS =
+  30000;
+
+const PROJECT_DOCUMENT_PDF_TEXT_TIMEOUT_MS =
+  30000;
+
+const PROJECT_DOCUMENT_OCR_FAST_SCALE =
+  1.33;
+
+const PROJECT_DOCUMENT_OCR_DETAIL_SCALE =
+  1.65;
+
+const PROJECT_DOCUMENT_OCR_PRIORITY_HEAD_PAGES =
+  3;
+
+const PROJECT_DOCUMENT_OCR_PRIORITY_TAIL_PAGES =
+  12;
+
+const PROJECT_DOCUMENT_OCR_DETAIL_MAX_PAGES =
+  16;
+
+const PROJECT_DOCUMENT_OCR_DETAIL_KINDS = [
+  'schedule',
+  'work-volume',
+  'specification'
+];
+
+function createProjectDocumentOcrBudgetError() {
+  const error = new Error(
+    'Автоматический OCR остановлен по общему лимиту времени.'
+  );
+
+  error.name = 'TimeoutError';
+  error.code = 'OCR_DOCUMENT_TIMEOUT';
+
+  return error;
+}
+
+function isProjectDocumentOcrBudgetError(
+  error
+) {
+  return Boolean(
+    error &&
+    error.code === 'OCR_DOCUMENT_TIMEOUT'
+  );
+}
+
+function getProjectDocumentUniquePages(
+  pageNumbers
+) {
+  return Array.from(
+    new Set(
+      (Array.isArray(pageNumbers)
+        ? pageNumbers
+        : [])
+        .map(function (pageNumber) {
+          return Number(pageNumber);
+        })
+        .filter(function (pageNumber) {
+          return Number.isInteger(pageNumber) &&
+            pageNumber > 0;
+        })
+    )
+  ).sort(function (first, second) {
+    return first - second;
+  });
+}
+
+function getProjectDocumentPrioritizedOcrPages(
+  pageNumbers,
+  totalPages
+) {
+  const allPages =
+    getProjectDocumentUniquePages(
+      pageNumbers
+    );
+
+  const tailStart =
+    Math.max(
+      1,
+      Number(totalPages || 0) -
+        PROJECT_DOCUMENT_OCR_PRIORITY_TAIL_PAGES +
+        1
+    );
+
+  const priorityPages =
+    getProjectDocumentUniquePages(
+      allPages.filter(function (pageNumber) {
+        return pageNumber <=
+          PROJECT_DOCUMENT_OCR_PRIORITY_HEAD_PAGES ||
+          pageNumber >= tailStart;
+      })
+    );
+
+  const prioritySet =
+    new Set(priorityPages);
+
+  return {
+    priorityPages,
+    remainingPages:
+      allPages.filter(function (pageNumber) {
+        return !prioritySet.has(pageNumber);
+      })
+  };
+}
+
+function getProjectDocumentRemainingOcrMs(
+  deadlineAt
+) {
+  return Math.max(
+    0,
+    Number(deadlineAt || 0) - Date.now()
+  );
+}
+
+function getProjectDocumentOcrTimeoutMs(
+  deadlineAt,
+  requestedTimeoutMs
+) {
+  const remainingMs =
+    getProjectDocumentRemainingOcrMs(
+      deadlineAt
+    );
+
+  if (remainingMs < 1000) {
+    return 0;
+  }
+
+  return Math.max(
+    1000,
+    Math.min(
+      Number(requestedTimeoutMs) ||
+        PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS,
+      remainingMs
+    )
+  );
+}
+
+function getProjectDocumentOcrStageLabel(
+  stage
+) {
+  const labels = {
+    'ocr-fast':
+      'Быстрый поиск структуры',
+    'ocr-detail':
+      'Точное чтение ГПР, ВОР и таблиц'
+  };
+
+  return labels[stage] || 'Локальный OCR';
+}
+
+function createProjectDocumentAbortError() {
+  const error = new Error(
+    'Анализ остановлен пользователем.'
+  );
+
+  error.name = 'AbortError';
+  error.code = 'PDF_ANALYSIS_CANCELLED';
+
+  return error;
+}
+
+function isProjectDocumentAbortError(
+  error
+) {
+  return Boolean(
+    error &&
+    (
+      error.name === 'AbortError' ||
+      error.code ===
+        'PDF_ANALYSIS_CANCELLED' ||
+      error.code === 'OCR_CANCELLED'
+    )
+  );
+}
+
+function throwIfProjectDocumentAnalysisCancelled(
+  signal
+) {
+  if (signal?.aborted) {
+    throw createProjectDocumentAbortError();
+  }
+}
+
+function awaitProjectDocumentOperation(
+  operation,
+  options = {}
+) {
+  const settings =
+    options &&
+    typeof options === 'object'
+      ? options
+      : {};
+
+  const signal =
+    settings.signal || null;
+
+  const timeoutMs =
+    Math.max(
+      1000,
+      Number(settings.timeoutMs) || 30000
+    );
+
+  return new Promise(function (
+    resolve,
+    reject
+  ) {
+    let settled = false;
+
+    let timer = null;
+
+    function cleanup() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      if (
+        signal &&
+        typeof signal.removeEventListener ===
+          'function'
+      ) {
+        signal.removeEventListener(
+          'abort',
+          onAbort
+        );
+      }
+    }
+
+    function settle(
+      handler,
+      value
+    ) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      handler(value);
+    }
+
+    function onAbort() {
+      settle(
+        reject,
+        createProjectDocumentAbortError()
+      );
+    }
+
+    if (
+      signal &&
+      signal.aborted
+    ) {
+      onAbort();
+      return;
+    }
+
+    if (
+      signal &&
+      typeof signal.addEventListener ===
+        'function'
+    ) {
+      signal.addEventListener(
+        'abort',
+        onAbort,
+        { once: true }
+      );
+    }
+
+    timer = setTimeout(
+      function () {
+        if (
+          typeof settings.onTimeout ===
+            'function'
+        ) {
+          try {
+            settings.onTimeout();
+          } catch (cleanupError) {
+            console.warn(
+              'Не удалось остановить зависшую операцию PDF:',
+              cleanupError
+            );
+          }
+        }
+
+        const error =
+          new Error(
+            settings.message ||
+              'Операция PDF превысила допустимое время.'
+          );
+
+        error.name =
+          'TimeoutError';
+
+        error.code =
+          settings.code ||
+          'PDF_OPERATION_TIMEOUT';
+
+        settle(
+          reject,
+          error
+        );
+      },
+      timeoutMs
+    );
+
+    let pending;
+
+    try {
+      pending =
+        operation();
+    } catch (error) {
+      settle(
+        reject,
+        error
+      );
+      return;
+    }
+
+    Promise.resolve(
+      pending
+    ).then(
+      function (value) {
+        settle(
+          resolve,
+          value
+        );
+      },
+      function (error) {
+        settle(
+          reject,
+          error
+        );
+      }
+    );
+  });
+}
+
+function yieldProjectDocumentAnalysis() {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, 0);
+  });
+}
+
+function getProjectDocumentMeaningfulLength(
+  text
+) {
+  return window.BuildMindPdfOcr &&
+    typeof window
+      .BuildMindPdfOcr
+      .meaningfulTextLength ===
+      'function'
+    ? window
+        .BuildMindPdfOcr
+        .meaningfulTextLength(text)
+    : String(text || '')
+        .replace(/\s+/g, '')
+        .length;
+}
+
+function getProjectDocumentAnalysisDate() {
+  return document
+    .getElementById('todayDate')
+    ?.value ||
+    new Date()
+      .toISOString()
+      .slice(0, 10);
+}
+
+function analyzeProjectDocumentCompositePages(
+  pageAnalyses
+) {
+  if (
+    !window.BuildMindCompositePdf ||
+    typeof window
+      .BuildMindCompositePdf
+      .analyzePages !== 'function'
+  ) {
+    return null;
+  }
+
+  return window
+    .BuildMindCompositePdf
+    .analyzePages(
+      pageAnalyses,
+      {
+        analysisDate:
+          getProjectDocumentAnalysisDate()
+      }
+    );
+}
+
+function getProjectDocumentDetailOcrPages(
+  compositeAnalysis,
+  availablePageNumbers
+) {
+  const availablePages =
+    new Set(
+      getProjectDocumentUniquePages(
+        availablePageNumbers
+      )
+    );
+
+  const sections =
+    Array.isArray(
+      compositeAnalysis?.meaningfulSections
+    )
+      ? compositeAnalysis.meaningfulSections
+      : [];
+
+  return getProjectDocumentUniquePages(
+    sections
+      .filter(function (section) {
+        return PROJECT_DOCUMENT_OCR_DETAIL_KINDS
+          .includes(section?.kind);
+      })
+      .flatMap(function (section) {
+        return Array.isArray(section?.pageNumbers)
+          ? section.pageNumbers
+          : [];
+      })
+      .filter(function (pageNumber) {
+        return availablePages.has(
+          Number(pageNumber)
+        );
+      })
+  ).slice(
+    0,
+    PROJECT_DOCUMENT_OCR_DETAIL_MAX_PAGES
+  );
+}
+
+function applyProjectDocumentOcrRecognition(
+  pageResult,
+  recognition,
+  mode
+) {
+  if (
+    !pageResult ||
+    !recognition ||
+    recognition.meaningfulTextLength < 20
+  ) {
+    return false;
+  }
+
+  pageResult.text =
+    recognition.text.slice(0, 30000);
+  pageResult.textLength =
+    recognition.text.length;
+  pageResult.truncated =
+    recognition.text.length > 30000;
+  pageResult.extractionMethod = 'ocr';
+  pageResult.ocrMode = mode;
+  pageResult.ocrConfidence =
+    recognition.confidence;
+
+  if (mode === 'detail') {
+    pageResult.layoutWords =
+      Array.isArray(recognition.layoutWords)
+        ? recognition.layoutWords
+        : [];
+  }
+
+  return true;
+}
+
 async function inspectPdfDocument(
-  documentItem
+  documentItem,
+  options = {}
 ) {
   let pdfDocument = null;
+  let ocrSession = null;
+
+  const signal = options.signal || null;
+  const pageTimeoutMs = Math.max(
+    1000,
+    Number(options.pageTimeoutMs) ||
+      PROJECT_DOCUMENT_OCR_PAGE_TIMEOUT_MS
+  );
 
   try {
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
+
     const fileBuffer =
-      await documentItem.file.arrayBuffer();
+      await awaitProjectDocumentOperation(
+        function () {
+          return documentItem.file.arrayBuffer();
+        },
+        {
+          signal,
+          timeoutMs:
+            PROJECT_DOCUMENT_FILE_READ_TIMEOUT_MS,
+          code:
+            'PDF_FILE_READ_TIMEOUT',
+          message:
+            'Чтение файла PDF превысило 30 секунд.'
+        }
+      );
+
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
 
     const loadingTask =
       window.pdfjsLib.getDocument({
@@ -4733,60 +5842,793 @@ async function inspectPdfDocument(
       });
 
     pdfDocument =
-      await loadingTask.promise;
+      await awaitProjectDocumentOperation(
+        function () {
+          return loadingTask.promise;
+        },
+        {
+          signal,
+          timeoutMs:
+            PROJECT_DOCUMENT_PDF_LOAD_TIMEOUT_MS,
+          code:
+            'PDF_LOAD_TIMEOUT',
+          message:
+            'Открытие PDF превысило 2 минуты.',
+          onTimeout:
+            function () {
+              if (
+                typeof loadingTask.destroy ===
+                  'function'
+              ) {
+                loadingTask.destroy();
+              }
+            }
+        }
+      );
+
+    throwIfProjectDocumentAnalysisCancelled(
+      signal
+    );
 
     let pagesWithText = 0;
+    let nativePagesWithText = 0;
+    let ocrUnavailableReason = '';
 
-const extractedPages = [];
+    const extractedPages = [];
+    const pageAnalyses = [];
+    const ocrAttemptedPages = [];
+    const ocrPages = [];
+    const ocrFastPages = [];
+    const ocrDetailPages = [];
+    const ocrDetailFailedPages = [];
+    const ocrSkippedPages = [];
+    const ocrFailedPages = [];
+    let ocrLimitReason = '';
 
+    /*
+     * Этап 1: быстро читаем штатный текстовый слой всех
+     * страниц. OCR на этом этапе не запускается, поэтому
+     * пользователь сразу видит движение по всему PDF.
+     */
     for (
       let pageNumber = 1;
       pageNumber <= pdfDocument.numPages;
       pageNumber += 1
     ) {
+      throwIfProjectDocumentAnalysisCancelled(
+        signal
+      );
+
+      notifyProjectDocumentAnalysisProgress(
+        documentItem,
+        {
+          stage:
+            'pdf-text',
+          pageNumber,
+          totalPages:
+            pdfDocument.numPages,
+          message:
+            'Читается текст PDF: страница ' +
+            pageNumber +
+            ' из ' +
+            pdfDocument.numPages
+        }
+      );
+
       const page =
-        await pdfDocument.getPage(
-          pageNumber
+        await awaitProjectDocumentOperation(
+          function () {
+            return pdfDocument.getPage(
+              pageNumber
+            );
+          },
+          {
+            signal,
+            timeoutMs:
+              PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS,
+            code:
+              'PDF_PAGE_TIMEOUT',
+            message:
+              'Чтение страницы PDF превысило 30 секунд.'
+          }
         );
 
-      const textContent =
-        await page.getTextContent();
+      try {
+        const textContent =
+          await awaitProjectDocumentOperation(
+            function () {
+              return page.getTextContent();
+            },
+            {
+              signal,
+              timeoutMs:
+                PROJECT_DOCUMENT_PDF_TEXT_TIMEOUT_MS,
+              code:
+                'PDF_TEXT_TIMEOUT',
+              message:
+                'Извлечение текстового слоя страницы превысило 30 секунд.'
+            }
+          );
 
-      const extractedText =
-        extractProjectDocumentPageText(
-          textContent.items
+        const extractedText =
+          extractProjectDocumentPageText(
+            textContent.items
+          );
+
+        const layoutWords =
+          extractProjectDocumentPageLayout(
+            textContent.items
+          );
+
+        const nativeMeaningfulLength =
+          getProjectDocumentMeaningfulLength(
+            extractedText
+          );
+
+        if (nativeMeaningfulLength >= 20) {
+          nativePagesWithText += 1;
+        }
+
+        const shouldRunOcr =
+          window.BuildMindPdfOcr &&
+          typeof window
+            .BuildMindPdfOcr
+            .shouldRecognize ===
+            'function' &&
+          window
+            .BuildMindPdfOcr
+            .shouldRecognize(
+              extractedText
+            );
+
+        if (shouldRunOcr) {
+          ocrAttemptedPages.push(
+            pageNumber
+          );
+        }
+
+        pageAnalyses.push({
+          pageNumber,
+          textLength:
+            extractedText.length,
+          text:
+            extractedText.slice(
+              0,
+              30000
+            ),
+          layoutWords,
+          truncated:
+            extractedText.length > 30000,
+          extractionMethod:
+            nativeMeaningfulLength >= 20
+              ? 'text'
+              : 'none',
+          nativeTextLength:
+            extractedText.length,
+          nativeMeaningfulLength,
+          requiresOcr:
+            shouldRunOcr,
+          ocrConfidence: null
+        });
+
+        notifyProjectDocumentAnalysisProgress(
+          documentItem,
+          {
+            stage: 'native-text',
+            pageNumber,
+            totalPages:
+              pdfDocument.numPages,
+            message:
+              `Чтение текста: страница ${pageNumber} ` +
+              `из ${pdfDocument.numPages}`
+          }
         );
+      } finally {
+        page.cleanup();
+      }
 
-      const meaningfulTextLength =
-        extractedText.replace(
-          /\s+/g,
-          ''
-        ).length;
-
-if (meaningfulTextLength >= 20) {
-  pagesWithText += 1;
-
-  extractedPages.push({
-    pageNumber,
-    textLength:
-      extractedText.length,
-    text:
-      extractedText.slice(
-        0,
-        20000
-      ),
-    truncated:
-      extractedText.length > 20000
-  });
-}
-
-      page.cleanup();
+      await yieldProjectDocumentAnalysis();
     }
 
-const documentClassification =
-  classifyProjectDocument(
-    extractedPages
-  );
+    /*
+     * Этап 2: двухпроходный локальный OCR.
+     *
+     * Сначала быстро ищем структуру на первых и последних
+     * страницах скана. Затем подробно читаем только найденные
+     * ГПР, ВОР и спецификации. Оставшиеся страницы проходят
+     * быстрый OCR только пока не исчерпан общий лимит времени.
+     * Это не позволяет одному PDF держать браузер десятки минут.
+     */
+    const ocrDeadlineAt =
+      Date.now() +
+      PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS;
+
+    const ocrPagePlan =
+      getProjectDocumentPrioritizedOcrPages(
+        ocrAttemptedPages,
+        pdfDocument.numPages
+      );
+
+    function addOcrFailure(
+      pageNumber,
+      mode
+    ) {
+      ocrFailedPages.push(pageNumber);
+
+      if (mode === 'detail') {
+        ocrDetailFailedPages.push(pageNumber);
+      }
+    }
+
+    function markOcrPagesSkipped(
+      pageNumbers,
+      mode = 'fast'
+    ) {
+      getProjectDocumentUniquePages(
+        pageNumbers
+      ).forEach(function (pageNumber) {
+        ocrSkippedPages.push(pageNumber);
+        addOcrFailure(pageNumber, mode);
+      });
+    }
+
+    async function prepareProjectDocumentOcr(
+      pageNumber
+    ) {
+      if (ocrSession) {
+        return;
+      }
+
+      if (
+        !window.BuildMindPdfOcr ||
+        !window.BuildMindPdfOcr.isAvailable()
+      ) {
+        throw new Error(
+          'Локальная OCR-библиотека не загрузилась из папки BuildMind.'
+        );
+      }
+
+      const initializationTimeoutMs =
+        getProjectDocumentOcrTimeoutMs(
+          ocrDeadlineAt,
+          PROJECT_DOCUMENT_OCR_INITIALIZATION_TIMEOUT_MS
+        );
+
+      if (!initializationTimeoutMs) {
+        throw createProjectDocumentOcrBudgetError();
+      }
+
+      notifyProjectDocumentAnalysisProgress(
+        documentItem,
+        {
+          stage: 'ocr-loading',
+          pageNumber,
+          totalPages:
+            pdfDocument.numPages,
+          message:
+            'Подготавливается локальный OCR из папки BuildMind…'
+        }
+      );
+
+      ocrSession =
+        await window
+          .BuildMindPdfOcr
+          .createSession({
+            signal,
+            timeoutMs:
+              initializationTimeoutMs,
+            initializationTimeoutMs,
+            onInitializationProgress(progress) {
+              const percent =
+                Math.round(
+                  (Number(progress?.progress) || 0) *
+                    100
+                );
+              const status =
+                String(progress?.status || '');
+              const label =
+                status.includes('language')
+                  ? 'подготовка русского и английского языков'
+                  : status.includes('core') ||
+                      status.includes('initializing')
+                    ? 'загрузка локального OCR-ядра'
+                    : 'подготовка OCR';
+
+              notifyProjectDocumentAnalysisProgress(
+                documentItem,
+                {
+                  stage: 'ocr-loading',
+                  pageNumber,
+                  totalPages:
+                    pdfDocument.numPages,
+                  progress: percent,
+                  message:
+                    `Локальный OCR: ${label} · ` +
+                    `${percent}%`
+                }
+              );
+            }
+          });
+
+      throwIfProjectDocumentAnalysisCancelled(
+        signal
+      );
+    }
+
+    async function recognizeProjectDocumentOcrPage(
+      pageNumber,
+      mode,
+      stageIndex,
+      stageTotal
+    ) {
+      const pageTimeout =
+        mode === 'detail'
+          ? Math.min(
+              pageTimeoutMs,
+              PROJECT_DOCUMENT_OCR_DETAIL_PAGE_TIMEOUT_MS
+            )
+          : PROJECT_DOCUMENT_OCR_FAST_PAGE_TIMEOUT_MS;
+
+      const timeoutMs =
+        getProjectDocumentOcrTimeoutMs(
+          ocrDeadlineAt,
+          pageTimeout
+        );
+
+      if (!timeoutMs) {
+        throw createProjectDocumentOcrBudgetError();
+      }
+
+      await prepareProjectDocumentOcr(
+        pageNumber
+      );
+
+      const page =
+        await awaitProjectDocumentOperation(
+          function () {
+            return pdfDocument.getPage(
+              pageNumber
+            );
+          },
+          {
+            signal,
+            timeoutMs:
+              PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS,
+            code:
+              'PDF_PAGE_TIMEOUT',
+            message:
+              'Чтение страницы PDF превысило 30 секунд.'
+          }
+        );
+
+      try {
+        return await ocrSession.recognizePage(
+          page,
+          pageNumber,
+          {
+            signal,
+            timeoutMs,
+            scale:
+              mode === 'detail'
+                ? PROJECT_DOCUMENT_OCR_DETAIL_SCALE
+                : PROJECT_DOCUMENT_OCR_FAST_SCALE,
+            includeLayout:
+              mode === 'detail',
+            tesseractOptions:
+              mode === 'detail'
+                ? {
+                    tessedit_pageseg_mode: '3',
+                    preserve_interword_spaces: '1'
+                  }
+                : {},
+            onProgress(progress) {
+              const percent =
+                Math.round(
+                  (Number(progress?.progress) || 0) *
+                    100
+                );
+
+              notifyProjectDocumentAnalysisProgress(
+                documentItem,
+                {
+                  stage:
+                    mode === 'detail'
+                      ? 'ocr-detail'
+                      : 'ocr-fast',
+                  pageNumber,
+                  totalPages:
+                    pdfDocument.numPages,
+                  progress: percent,
+                  message:
+                    `${getProjectDocumentOcrStageLabel(
+                      mode === 'detail'
+                        ? 'ocr-detail'
+                        : 'ocr-fast'
+                    )}: страница ${pageNumber} из ` +
+                    `${pdfDocument.numPages} · ${percent}% · ` +
+                    `${stageIndex} из ${stageTotal}`
+                }
+              );
+            }
+          }
+        );
+      } finally {
+        page.cleanup();
+      }
+    }
+
+    async function runProjectDocumentOcrStage(
+      pageNumbers,
+      mode
+    ) {
+      const pages =
+        getProjectDocumentUniquePages(
+          pageNumbers
+        );
+
+      for (
+        let stageIndex = 0;
+        stageIndex < pages.length;
+        stageIndex += 1
+      ) {
+        throwIfProjectDocumentAnalysisCancelled(
+          signal
+        );
+
+        if (
+          ocrUnavailableReason ||
+          ocrLimitReason
+        ) {
+          return false;
+        }
+
+        const pageNumber = pages[stageIndex];
+        const pageResult =
+          pageAnalyses[pageNumber - 1];
+
+        try {
+          const recognition =
+            await recognizeProjectDocumentOcrPage(
+              pageNumber,
+              mode,
+              stageIndex + 1,
+              pages.length
+            );
+
+          const recognized =
+            applyProjectDocumentOcrRecognition(
+              pageResult,
+              recognition,
+              mode
+            );
+
+          if (recognized) {
+            ocrPages.push(pageNumber);
+
+            if (mode === 'detail') {
+              ocrDetailPages.push(pageNumber);
+            } else {
+              ocrFastPages.push(pageNumber);
+            }
+          } else {
+            addOcrFailure(pageNumber, mode);
+          }
+        } catch (ocrError) {
+          if (
+            isProjectDocumentAbortError(
+              ocrError
+            )
+          ) {
+            throw createProjectDocumentAbortError();
+          }
+
+          console.warn(
+            `OCR страницы ${pageNumber} не выполнен:`,
+            ocrError
+          );
+
+          if (
+            isProjectDocumentOcrBudgetError(
+              ocrError
+            )
+          ) {
+            ocrLimitReason =
+              `Лимит ${Math.round(
+                PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS /
+                  60000
+              )} мин. исчерпан. ` +
+              'BuildMind сохранил уже распознанные данные и не продолжает бесконечное ожидание.';
+
+            markOcrPagesSkipped(
+              pages.slice(stageIndex),
+              mode
+            );
+
+            notifyProjectDocumentAnalysisProgress(
+              documentItem,
+              {
+                stage: 'ocr-limit',
+                pageNumber,
+                totalPages:
+                  pdfDocument.numPages,
+                message:
+                  ocrLimitReason
+              }
+            );
+
+            return false;
+          }
+
+          if (
+            ocrError?.code ===
+            'OCR_PAGE_TIMEOUT'
+          ) {
+            const timedOutSession =
+              ocrSession;
+
+            ocrSession = null;
+
+            if (
+              timedOutSession &&
+              typeof timedOutSession.terminate ===
+                'function'
+            ) {
+              await timedOutSession.terminate();
+            }
+
+            addOcrFailure(pageNumber, mode);
+
+            notifyProjectDocumentAnalysisProgress(
+              documentItem,
+              {
+                stage: 'ocr-timeout',
+                pageNumber,
+                totalPages:
+                  pdfDocument.numPages,
+                message:
+                  `Страница ${pageNumber} пропущена: ` +
+                  `${getProjectDocumentOcrStageLabel(
+                    mode === 'detail'
+                      ? 'ocr-detail'
+                      : 'ocr-fast'
+                  )} превысил ${Math.round(
+                    (mode === 'detail'
+                      ? PROJECT_DOCUMENT_OCR_DETAIL_PAGE_TIMEOUT_MS
+                      : PROJECT_DOCUMENT_OCR_FAST_PAGE_TIMEOUT_MS) /
+                      1000
+                  )} сек. Анализ продолжается.`
+              }
+            );
+          } else {
+            ocrUnavailableReason =
+              ocrUnavailableReason ||
+              (
+                ocrError?.code ===
+                  'OCR_INITIALIZATION_TIMEOUT'
+                  ? 'Локальный OCR не подготовился за 2 минуты. Проверьте, что папка vendor распакована целиком, и запустите анализ повторно.'
+                  : String(
+                      ocrError?.message ||
+                      'Локальный OCR недоступен.'
+                    )
+              );
+
+            addOcrFailure(pageNumber, mode);
+            markOcrPagesSkipped(
+              pages.slice(stageIndex + 1),
+              mode
+            );
+
+            notifyProjectDocumentAnalysisProgress(
+              documentItem,
+              {
+                stage: 'ocr-unavailable',
+                pageNumber,
+                totalPages:
+                  pdfDocument.numPages,
+                message:
+                  ocrUnavailableReason
+              }
+            );
+
+            return false;
+          }
+        }
+
+        await yieldProjectDocumentAnalysis();
+      }
+
+      return true;
+    }
+
+    const priorityQuickComplete =
+      await runProjectDocumentOcrStage(
+        ocrPagePlan.priorityPages,
+        'fast'
+      );
+
+    let provisionalCompositeAnalysis =
+      analyzeProjectDocumentCompositePages(
+        pageAnalyses
+      );
+
+    let detailPageNumbers =
+      getProjectDocumentDetailOcrPages(
+        provisionalCompositeAnalysis,
+        ocrAttemptedPages
+      );
+
+    if (
+      [
+        'work-volume',
+        'schedule'
+      ].includes(
+        String(options.documentRole || '')
+      )
+    ) {
+      detailPageNumbers =
+        getProjectDocumentUniquePages(
+          ocrAttemptedPages
+        ).slice(
+          0,
+          PROJECT_DOCUMENT_OCR_DETAIL_MAX_PAGES
+        );
+
+      notifyProjectDocumentAnalysisProgress(
+        documentItem,
+        {
+          stage: 'ocr-detail-plan',
+          pageNumber: 1,
+          totalPages: pdfDocument.numPages,
+          message:
+            'Для выбранного ВОР/ГПР включено точное чтение таблиц.'
+        }
+      );
+    }
+
+    if (
+      priorityQuickComplete &&
+      detailPageNumbers.length === 0
+    ) {
+      await runProjectDocumentOcrStage(
+        ocrPagePlan.remainingPages,
+        'fast'
+      );
+
+      provisionalCompositeAnalysis =
+        analyzeProjectDocumentCompositePages(
+          pageAnalyses
+        );
+
+      detailPageNumbers =
+        getProjectDocumentDetailOcrPages(
+          provisionalCompositeAnalysis,
+          ocrAttemptedPages
+        );
+    }
+
+    if (
+      detailPageNumbers.length > 0 &&
+      !ocrUnavailableReason &&
+      !ocrLimitReason
+    ) {
+      await runProjectDocumentOcrStage(
+        detailPageNumbers,
+        'detail'
+      );
+    }
+
+    if (
+      priorityQuickComplete &&
+      ocrPagePlan.remainingPages.length > 0 &&
+      !ocrUnavailableReason &&
+      !ocrLimitReason
+    ) {
+      await runProjectDocumentOcrStage(
+        ocrPagePlan.remainingPages,
+        'fast'
+      );
+    }
+
+    const finalCompositePreview =
+      analyzeProjectDocumentCompositePages(
+        pageAnalyses
+      );
+
+    const completedDetailPages =
+      new Set(
+        getProjectDocumentUniquePages(
+          ocrDetailPages
+        )
+      );
+
+    const additionalDetailPages =
+      getProjectDocumentDetailOcrPages(
+        finalCompositePreview,
+        ocrAttemptedPages
+      ).filter(function (pageNumber) {
+        return !completedDetailPages.has(pageNumber);
+      });
+
+    if (
+      additionalDetailPages.length > 0 &&
+      !ocrUnavailableReason &&
+      !ocrLimitReason
+    ) {
+      await runProjectDocumentOcrStage(
+        additionalDetailPages,
+        'detail'
+      );
+    }
+
+    ocrAttemptedPages.forEach(
+      function (pageNumber) {
+        const pageResult =
+          pageAnalyses[pageNumber - 1];
+
+        if (
+          getProjectDocumentMeaningfulLength(
+            pageResult?.text
+          ) >= 20
+        ) {
+          return;
+        }
+
+        ocrFailedPages.push(pageNumber);
+
+        if (
+          !ocrFastPages.includes(pageNumber) &&
+          !ocrDetailPages.includes(pageNumber)
+        ) {
+          ocrSkippedPages.push(pageNumber);
+        }
+      }
+    );
+
+    pageAnalyses.forEach(
+      function (pageResult) {
+        const meaningfulTextLength =
+          getProjectDocumentMeaningfulLength(
+            pageResult.text
+          );
+
+        delete pageResult.requiresOcr;
+        delete pageResult.nativeMeaningfulLength;
+
+        if (meaningfulTextLength >= 20) {
+          pagesWithText += 1;
+          extractedPages.push(pageResult);
+        }
+      }
+    );
+
+    notifyProjectDocumentAnalysisProgress(
+      documentItem,
+      {
+        stage: 'classification',
+        pageNumber:
+          pdfDocument.numPages,
+        totalPages:
+          pdfDocument.numPages,
+        message:
+          'Текст прочитан. BuildMind формирует разделы и вопросы для проверки…'
+      }
+    );
+
+    const fallbackClassification =
+      classifyProjectDocument(
+        extractedPages
+      );
+
+    const compositeAnalysis =
+      analyzeProjectDocumentCompositePages(
+        pageAnalyses
+      );
+
+    const documentClassification =
+      getProjectDocumentCompositeClassification(
+        compositeAnalysis,
+        fallbackClassification
+      );
 
     const materialCandidates =
   extractMaterialCandidates(
@@ -4798,24 +6640,97 @@ const documentClassification =
     );
   });
     
+    const nativePdfType =
+      getPdfTextLayerType(
+        nativePagesWithText,
+        pdfDocument.numPages
+      );
+
+    const normalizedOcrPages =
+      getProjectDocumentUniquePages(
+        ocrPages
+      );
+
+    const normalizedOcrFastPages =
+      getProjectDocumentUniquePages(
+        ocrFastPages
+      );
+
+    const normalizedOcrDetailPages =
+      getProjectDocumentUniquePages(
+        ocrDetailPages
+      );
+
+    const normalizedOcrFailedPages =
+      getProjectDocumentUniquePages(
+        ocrFailedPages
+      );
+
+    const normalizedOcrSkippedPages =
+      getProjectDocumentUniquePages(
+        ocrSkippedPages
+      );
+
     return {
-  success: true,
-  fileName:
-    documentItem.file.name,
-  totalPages:
-    pdfDocument.numPages,
- pagesWithText,
-extractedPages,
-documentClassification,
-materialCandidates,
-pdfType:
-    getPdfTextLayerType(
+      success: true,
+      fileName:
+        documentItem.file.name,
+      totalPages:
+        pdfDocument.numPages,
       pagesWithText,
-      pdfDocument.numPages
-    )
-};
+      nativePagesWithText,
+      extractedPages,
+      pageAnalyses,
+      documentClassification,
+      materialCandidates,
+      compositeAnalysis,
+      ocrAttemptedPages,
+      ocrPages:
+        normalizedOcrPages,
+      ocrFastPages:
+        normalizedOcrFastPages,
+      ocrDetailPages:
+        normalizedOcrDetailPages,
+      ocrDetailFailedPages:
+        getProjectDocumentUniquePages(
+          ocrDetailFailedPages
+        ),
+      ocrSkippedPages:
+        normalizedOcrSkippedPages,
+      ocrFailedPages:
+        normalizedOcrFailedPages,
+      ocrUnavailableReason,
+      ocrLimitReason,
+      ocrTimeLimitMs:
+        PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS,
+      ocrStrategy:
+        'local-two-pass',
+      analysisStatus:
+        ocrUnavailableReason &&
+        pagesWithText === 0
+          ? 'ocr-unavailable'
+          : normalizedOcrFailedPages.length > 0 ||
+              ocrLimitReason
+            ? 'partial'
+            : 'complete',
+      nativePdfType,
+      pdfType:
+        normalizedOcrPages.length > 0
+          ? `${nativePdfType}. ` +
+            `Локальный OCR: быстрый проход — ` +
+            `${normalizedOcrFastPages.length} стр., ` +
+            `точное чтение таблиц — ` +
+            `${normalizedOcrDetailPages.length} стр.`
+          : nativePdfType
+    };
     
   } catch (error) {
+    if (
+      isProjectDocumentAbortError(error)
+    ) {
+      throw error;
+    }
+
     console.error(
       'Ошибка диагностики PDF:',
       error
@@ -4830,6 +6745,20 @@ pdfType:
     ) {
       errorMessage =
         'PDF защищён паролем.';
+    } else if (
+      error &&
+      [
+        'PDF_FILE_READ_TIMEOUT',
+        'PDF_LOAD_TIMEOUT',
+        'PDF_PAGE_TIMEOUT',
+        'PDF_TEXT_TIMEOUT'
+      ].includes(
+        error.code
+      )
+    ) {
+      errorMessage =
+        error.message ||
+        'Операция PDF превысила допустимое время.';
     }
 
     return {
@@ -4838,6 +6767,14 @@ pdfType:
       errorMessage
     };
   } finally {
+    if (
+      ocrSession &&
+      typeof ocrSession.terminate ===
+        'function'
+    ) {
+      await ocrSession.terminate();
+    }
+
     if (
       pdfDocument &&
       typeof pdfDocument.destroy ===
@@ -4848,144 +6785,9 @@ pdfType:
   }
 }
 
-async function analyzeSelectedPdfDocuments() {
-  const message =
-    document.getElementById(
-      'documentsMessage'
-    );
-
-  const analyzeButton =
-    document.getElementById(
-      'analyzePdfBtn'
-    );
-
-  if (!message || !analyzeButton) {
-    return;
-  }
-
-  const pdfDocuments =
-    uploadedProjectDocuments.filter(
-      function (documentItem) {
-        return (
-          getProjectDocumentExtension(
-            documentItem.file
-          ) === 'pdf'
-        );
-      }
-    );
-
-  if (pdfDocuments.length === 0) {
-    message.textContent =
-      'Сначала выберите хотя бы один PDF-файл.';
-
-    return;
-  }
-
-  if (!window.pdfjsLib) {
-    message.textContent =
-      'Библиотека PDF ещё загружается. ' +
-      'Проверьте подключение к интернету ' +
-      'и повторите через несколько секунд.';
-
-    return;
-  }
-
-  analyzeButton.disabled = true;
-
-  analyzeButton.textContent =
-    'Проверка PDF...';
-
-  message.textContent =
-    `Начинается проверка: ` +
-    `${getDocumentsCountText(
-      pdfDocuments.length
-    )}.`;
-
-  const results = [];
-
-  for (
-    let index = 0;
-    index < pdfDocuments.length;
-    index += 1
-  ) {
-    const documentItem =
-      pdfDocuments[index];
-    
-documentItem.status =
-  'analyzing';
-
-documentItem.analysis = null;
-
-renderProjectDocuments();
-    
-    message.textContent =
-      `Проверяется ${index + 1} из ` +
-      `${pdfDocuments.length}:\n` +
-      documentItem.file.name;
-
-    const result =
-  await inspectPdfDocument(
-    documentItem
-  );
-
-documentItem.analysis =
-  result;
-
-documentItem.status =
-  result.success
-    ? 'analyzed'
-    : 'error';
-
-results.push(result);
-
-renderProjectDocuments();
-  }
-
-  const resultLines =
-    results.map(function (result) {
-      if (!result.success) {
-        return (
-          `✗ ${result.fileName}\n` +
-          `  ${result.errorMessage}`
-        );
-      }
-
-      return (
-        `✓ ${result.fileName}\n` +
-        `  Страниц: ${result.totalPages}\n` +
-        `  ${result.pdfType}`
-      );
-    });
-
-  message.textContent =
-    'Диагностика PDF завершена:\n\n' +
-    resultLines.join('\n\n');
-
-  analyzeButton.disabled = false;
-
-  analyzeButton.textContent =
-    'Проверить PDF';
-}
-
-function initializePdfDiagnostics() {
-  const analyzeButton =
-    document.getElementById(
-      'analyzePdfBtn'
-    );
-
-  if (!analyzeButton) {
-    return;
-  }
-
-  analyzeButton.addEventListener(
-    'click',
-    analyzeSelectedPdfDocuments
-  );
-}
-
-initializePdfDiagnostics();
 async function analyzeProjectDocumentPdfForApi(
-  documentItem
+  documentItem,
+  options = {}
 ) {
   if (
     !documentItem ||
@@ -5007,10 +6809,26 @@ async function analyzeProjectDocumentPdfForApi(
 
   renderProjectDocuments();
 
-  const result =
-    await inspectPdfDocument(
-      documentItem
-    );
+  let result;
+
+  try {
+    result =
+      await inspectPdfDocument(
+        documentItem,
+        options
+      );
+  } catch (error) {
+    documentItem.status =
+      isProjectDocumentAbortError(error)
+        ? 'waiting'
+        : 'error';
+
+    documentItem.analysis = null;
+
+    renderProjectDocuments();
+
+    throw error;
+  }
 
   documentItem.analysis =
     result;
@@ -5055,8 +6873,18 @@ window.BuildMindProjectDocuments = {
   getExtension:
     getProjectDocumentExtension,
 
+  getRoleOptions:
+    getProjectDocumentRoleOptions,
+
+  inferRole:
+    inferProjectDocumentRoleFromFile,
+
   chooseFiles:
     function () {
+      if (projectDocumentsAnalysisBusy) {
+        return;
+      }
+
       document
         .getElementById(
           'projectDocumentsInput'
@@ -5066,6 +6894,14 @@ window.BuildMindProjectDocuments = {
 
   analyzePdfDocument:
     analyzeProjectDocumentPdfForApi,
+
+  setBusy:
+    function (value) {
+      projectDocumentsAnalysisBusy =
+        Boolean(value);
+
+      renderProjectDocuments();
+    },
 
   render:
     renderProjectDocuments

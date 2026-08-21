@@ -1587,6 +1587,34 @@ async function registerDocumentRevision() {
     };
 
 
+    if (
+      window.BuildMindChangeSet &&
+      typeof window
+        .BuildMindChangeSet
+        .captureRevision === 'function'
+    ) {
+      const changeSetResult =
+        await window
+          .BuildMindChangeSet
+          .captureRevision({
+            uploadedDocument,
+            registryDocument,
+            revision,
+            previousRevision:
+              previousCurrent
+          });
+
+      if (
+        changeSetResult
+          ?.changeSetId
+      ) {
+        revision.changeSetId =
+          changeSetResult
+            .changeSetId;
+      }
+    }
+
+
     registryDocument
       .revisions
       .push(
@@ -1620,6 +1648,11 @@ async function registerDocumentRevision() {
     setDocumentRegistryMessage(
       'Редакция зарегистрирована ' +
       'со статусом «Получен». ' +
+      (
+        revision.changeSetId
+          ? 'Пакет изменений сформирован и ожидает проверки инженера. '
+          : 'Снимок сохранён как базовая точка для следующего сравнения. '
+      ) +
       'Прошлые редакции не изменены.'
     );
 

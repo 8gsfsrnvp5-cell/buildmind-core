@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "road-contract-composite-41p-v1",
+  "sourcePolicy": "private-local-only",
+  "totalPages": 41,
+  "expectedSections": [
+    {
+      "kind": "agreement",
+      "startPage": 1,
+      "endPage": 32
+    },
+    {
+      "kind": "schedule",
+      "startPage": 33,
+      "endPage": 38
+    },
+    {
+      "kind": "commercial-proposal",
+      "secondaryKinds": [
+        "work-volume"
+      ],
+      "startPage": 39,
+      "endPage": 41
+    }
+  ],
+  "pageExpectations": [
+    {
+      "pageNumber": 31,
+      "expectedKind": "agreement",
+      "forbiddenAnchorKinds": [
+        "schedule",
+        "commercial-proposal"
+      ],
+      "reason": "Перечень приложений упоминает ГПР и стоимость, но не начинает новый раздел."
+    },
+    {
+      "pageNumber": 33,
+      "expectedKind": "schedule",
+      "requiredAnchor": true
+    },
+    {
+      "pageNumber": 39,
+      "expectedKind": "commercial-proposal",
+      "requiredAnchor": true
+    }
+  ],
+  "knownErrorClasses": [
+    "schedule-reference-in-contract",
+    "ocr-date-noise",
+    "contractual-requirement-vs-completed-approval"
+  ],
+  "acceptance": {
+    "pageCoverage": 1,
+    "schedulePrecision": 0.9,
+    "scheduleRecall": 0.9,
+    "workVolumePrecision": 0.9,
+    "workVolumeRecall": 0.9
+  }
+}
