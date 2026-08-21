@@ -9,7 +9,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_TABLE_ENGINE_VERSION =
-  'pdf-table-engine-v1.3';
+  'pdf-table-engine-v1.4';
 
 const PDF_TABLE_UNIT_SOURCE =
   '(?:п\\.?\\s*м\\.?|пог\\.?\\s*м\\.?|м[23²³]?|км|шт\\.?|штук|компл\\.?|комплект(?:ов)?|кг|т|л|рул\\.?|рулон)';
@@ -80,12 +80,13 @@ function normalizePdfTableText(value) {
 function cleanPdfTableName(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
+    .replace(/^[|\[\]{}()]+\s*/, '')
     .replace(
       /^\s*(?:№?\s*)?\d+(?:[.\-]\d+)*[.)]?\s+/,
       ''
     )
-    .replace(/^[-–—;:,\s]+/, '')
-    .replace(/[-–—;:,\s]+$/, '')
+    .replace(/^[|\[\]{}()\-–—;:,\s]+/, '')
+    .replace(/[|\[\]{}()\-–—;:,\s]+$/, '')
     .trim();
 }
 
@@ -117,11 +118,29 @@ function parsePdfTableNumber(value) {
     : null;
 }
 
+function parsePdfTableNumberPrefix(value) {
+  const source =
+    String(value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const match =
+    source.match(
+      /^[+-]?(?:(?:\d{1,3}(?: \d{3})+)|\d+)(?:[.,]\d+)?/
+    );
+
+  return match
+    ? parsePdfTableNumber(match[0])
+    : null;
+}
+
 function normalizePdfTableUnit(value) {
   const normalized =
     normalizePdfTableText(value)
       .replace(/\s+/g, '')
-      .replace(/\.$/, '');
+      .replace(/[|\[\]{}()]/g, '')
+      .replace(/[.,;:]+$/, '')
+      .toLowerCase();
 
   const units = {
     м: 'м',
@@ -139,6 +158,8 @@ function normalizePdfTableUnit(value) {
     компл: 'компл.',
     комплект: 'компл.',
     комплектов: 'компл.',
+    комплекс: 'компл.',
+    комплекса: 'компл.',
     кг: 'кг',
     т: 'т',
     л: 'л',
@@ -146,7 +167,33 @@ function normalizePdfTableUnit(value) {
     рулон: 'рул.'
   };
 
-  return units[normalized] || '';
+  if (units[normalized]) {
+    return units[normalized];
+  }
+
+  if (/^[mм]$/.test(normalized)) {
+    return 'м';
+  }
+
+  if (/^[mм][2²]$/.test(normalized)) {
+    return 'м²';
+  }
+
+  if (/^[mм][3³]$/.test(normalized)) {
+    return 'м³';
+  }
+
+  // На русских сканах Tesseract часто принимает «шт»
+  // за пары латинских символов wr/wt/mr/mt/ut.
+  if (/^(?:wr|wt|mr|mt|ut)$/.test(normalized)) {
+    return 'шт';
+  }
+
+  if (/^(?:komпл|kompl|компл|комплекс)$/.test(normalized)) {
+    return 'компл.';
+  }
+
+  return '';
 }
 
 function toPdfTableIsoDate(
@@ -844,6 +891,119 @@ function hasPdfTableGridWorkName(
   );
 }
 
+function extractPdfTableWorkCode(cells) {
+  const source =
+    (Array.isArray(cells) ? cells : [])
+      .slice(0, 2)
+      .join(' ')
+      .replace(/[|\[\]{}()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const match =
+    source.match(
+      /(?:^|\s)(\d{1,3}(?:[.,]\d{1,3}){0,3})(?=\s|$)/
+    );
+
+  return match
+    ? match[1].replace(/,/g, '.')
+    : '';
+}
+
+function parsePdfTableGridUnitAndQuantity(
+  unitCell,
+  quantityCell
+) {
+  const rawUnit =
+    String(unitCell || '')
+      .replace(/[|\[\]{}()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const rawQuantity =
+    String(quantityCell || '')
+      .replace(/[|\[\]{}()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const unitMatch =
+    rawUnit.match(
+      /^([^\s]+?)(?:\s+(\d{1,3}))?$/u
+    );
+  const unit =
+    normalizePdfTableUnit(
+      unitMatch?.[1] || rawUnit
+    );
+  const carriedDigits =
+    unit && unitMatch?.[2]
+      ? unitMatch[2]
+      : '';
+  let quantity =
+    parsePdfTableNumberPrefix(
+      rawQuantity
+    );
+
+  if (carriedDigits && rawQuantity) {
+    const combined =
+      parsePdfTableNumberPrefix(
+        carriedDigits + ' ' + rawQuantity
+      );
+
+    if (combined !== null) {
+      quantity = combined;
+    }
+  }
+
+  return {
+    unit,
+    quantity,
+    unitReviewRequired: !unit
+  };
+}
+
+function inferPdfTableUnitFromWorkName(value) {
+  const name =
+    normalizePdfTableText(value);
+
+  if (
+    /(?:перевозк|отход|утилизац)/.test(name) &&
+    /(?:грунт|мусор)/.test(name)
+  ) {
+    return 'т';
+  }
+
+  if (
+    /(?:протяжк|прокладк|демонтаж|вытянуть)/.test(name) &&
+    /кабел/.test(name)
+  ) {
+    return 'м';
+  }
+
+  return '';
+}
+
+function extractPdfTableGridDate(value) {
+  const source =
+    String(value || '');
+  const extracted =
+    extractPdfTableDates(source)[0]
+      ?.value || '';
+
+  if (extracted) {
+    return extracted;
+  }
+
+  const digits =
+    source.replace(/\D/g, '');
+
+  if (digits.length !== 8) {
+    return '';
+  }
+
+  return toPdfTableIsoDate(
+    digits.slice(0, 2),
+    digits.slice(2, 4),
+    digits.slice(4)
+  ) || '';
+}
+
 function parsePdfTableGridVolumeRow(
   row,
   context = {}
@@ -854,14 +1014,26 @@ function parsePdfTableGridVolumeRow(
       : [];
   const workName =
     cleanPdfTableName(cells[1] || '');
+  const workCode =
+    extractPdfTableWorkCode(cells);
+  const parsedMeasure =
+    parsePdfTableGridUnitAndQuantity(
+      cells[2] || '',
+      cells[3] || ''
+    );
+  const inferredUnit =
+    parsedMeasure.unit
+      ? ''
+      : inferPdfTableUnitFromWorkName(
+          workName
+        );
   const unit =
-    normalizePdfTableUnit(cells[2] || '');
-  const quantity =
-    parsePdfTableNumber(cells[3] || '');
+    parsedMeasure.unit || inferredUnit;
+  const quantity = parsedMeasure.quantity;
 
   if (
     !hasPdfTableGridWorkName(workName) ||
-    !unit ||
+    (/^\d+$/.test(workCode) && !unit) ||
     quantity === null ||
     quantity <= 0
   ) {
@@ -869,6 +1041,7 @@ function parsePdfTableGridVolumeRow(
   }
 
   return {
+    workCode,
     workName,
     unit,
     quantity,
@@ -876,9 +1049,16 @@ function parsePdfTableGridVolumeRow(
       workName,
       context
     ),
-    confidence: 'high',
+    confidence:
+      unit ? 'high' : 'medium',
+    measureReviewRequired:
+      parsedMeasure.unitReviewRequired,
+    unitInferredFromWorkName:
+      Boolean(inferredUnit),
     evidence:
-      'строка ВОР по координатной сетке таблицы'
+      unit && !inferredUnit
+        ? 'строка ВОР по координатной сетке таблицы'
+        : 'строка ВОР: единица измерения восстановлена или требует проверки'
   };
 }
 
@@ -891,40 +1071,69 @@ function parsePdfTableGridScheduleRow(
       : [];
   const workName =
     cleanPdfTableName(cells[1] || '');
+  const workCode =
+    extractPdfTableWorkCode(cells);
+  const parsedMeasure =
+    parsePdfTableGridUnitAndQuantity(
+      cells[2] || '',
+      cells[3] || ''
+    );
+  const inferredUnit =
+    parsedMeasure.unit
+      ? ''
+      : inferPdfTableUnitFromWorkName(
+          workName
+        );
   const unit =
-    normalizePdfTableUnit(cells[2] || '');
-  const quantity =
-    parsePdfTableNumber(cells[3] || '');
+    parsedMeasure.unit || inferredUnit;
+  const quantity = parsedMeasure.quantity;
   const startDate =
-    extractPdfTableDates(
+    extractPdfTableGridDate(
       cells[4] || ''
-    )[0]?.value || '';
+    );
   const finishDate =
-    extractPdfTableDates(
+    extractPdfTableGridDate(
       cells[5] || ''
-    )[0]?.value || '';
+    );
 
   if (
     !hasPdfTableGridWorkName(workName) ||
-    !unit ||
+    (/^\d+$/.test(workCode) && !unit) ||
     quantity === null ||
     quantity <= 0 ||
-    !startDate ||
-    !finishDate
+    (!startDate && !finishDate)
   ) {
     return null;
   }
 
   return {
+    workCode,
     workName,
     unit,
     quantity,
     startDate,
     finishDate,
     rowType: 'work',
-    confidence: 'high',
+    confidence:
+      unit && !inferredUnit &&
+        startDate && finishDate
+        ? 'high'
+        : 'medium',
+    measureReviewRequired:
+      parsedMeasure.unitReviewRequired,
+    unitInferredFromWorkName:
+      Boolean(inferredUnit),
+    scheduleReviewRequired:
+      !startDate || !finishDate,
+    scheduleReviewReasons:
+      !startDate || !finishDate
+        ? ['В строке ГПР распознана только одна из двух дат.']
+        : [],
     evidence:
-      'строка ГПР по координатной сетке таблицы'
+      unit && !inferredUnit &&
+        startDate && finishDate
+        ? 'строка ГПР по координатной сетке таблицы'
+        : 'строка ГПР требует проверки единицы измерения или даты'
   };
 }
 
@@ -939,10 +1148,42 @@ function extractPdfTableStructuredGridCandidates(
       context
     );
   const seen = new Set();
+  let scheduleDefaults = null;
 
-  return rows
-    .map(function (row) {
-      const parsed =
+  return rows.reduce(function (
+    result,
+    row
+  ) {
+      if (context?.schedule) {
+        const cells =
+          Array.isArray(row?.cells)
+            ? row.cells
+            : [];
+        const rowCode =
+          extractPdfTableWorkCode(cells);
+        const rowStart =
+          extractPdfTableGridDate(
+            cells[4] || ''
+          );
+        const rowFinish =
+          extractPdfTableGridDate(
+            cells[5] || ''
+          );
+
+        if (
+          rowCode &&
+          (rowStart || rowFinish) &&
+          rowCode.split('.').length <= 2
+        ) {
+          scheduleDefaults = {
+            workCode: rowCode,
+            startDate: rowStart,
+            finishDate: rowFinish
+          };
+        }
+      }
+
+      let parsed =
         context?.schedule
           ? parsePdfTableGridScheduleRow(row)
           : context?.workTable
@@ -953,7 +1194,45 @@ function extractPdfTableStructuredGridCandidates(
             : null;
 
       if (!parsed) {
-        return null;
+        return result;
+      }
+
+      if (
+        context?.schedule &&
+        scheduleDefaults?.workCode &&
+        parsed.workCode &&
+        parsed.workCode.startsWith(
+          scheduleDefaults.workCode + '.'
+        ) &&
+        (!parsed.startDate || !parsed.finishDate)
+      ) {
+        const inheritedStart =
+          parsed.startDate ||
+          scheduleDefaults.startDate || '';
+        const inheritedFinish =
+          parsed.finishDate ||
+          scheduleDefaults.finishDate || '';
+
+        parsed = {
+          ...parsed,
+          startDate: inheritedStart,
+          finishDate: inheritedFinish,
+          confidence: 'medium',
+          scheduleReviewRequired: true,
+          scheduleReviewReasons: [
+            ...(
+              Array.isArray(
+                parsed.scheduleReviewReasons
+              )
+                ? parsed.scheduleReviewReasons
+                : []
+            ),
+            'Одна дата восстановлена из диапазона родительского раздела ГПР.'
+          ],
+          evidence:
+            String(parsed.evidence || '') +
+            ' · дата из родительского раздела'
+        };
       }
 
       const candidate = {
@@ -984,13 +1263,13 @@ function extractPdfTableStructuredGridCandidates(
         getPdfTableCandidateKey(candidate);
 
       if (seen.has(key)) {
-        return null;
+        return result;
       }
 
       seen.add(key);
-      return candidate;
-    })
-    .filter(Boolean);
+      result.push(candidate);
+      return result;
+    }, []);
 }
 
 function parsePdfTableVolumeRow(
@@ -1211,6 +1490,7 @@ function getPdfTableCandidateKey(
   candidate
 ) {
   return [
+    candidate?.workCode || '',
     normalizePdfTableText(
       candidate?.workName
     ),
@@ -1393,74 +1673,32 @@ function mergePdfTableWorks(candidates) {
     deduplicatePdfTableCandidates(
       candidates
     );
-  const volumeWorks =
-    source.filter(function (item) {
-      return (
-        item.rowType === 'work' &&
-        item.quantity !== null
-      );
-    });
-  const scheduleWorks =
-    source.filter(function (item) {
-      return (
-        item.rowType === 'work' &&
-        item.startDate &&
-        item.finishDate
-      );
-    });
-  const result =
-    volumeWorks.map(function (item) {
+
+  // Строка координатной таблицы ГПР уже содержит и объём,
+  // и даты. Прежняя логика дважды включала такую строку:
+  // сначала как ВОР, затем как ГПР. Здесь каждая физическая
+  // строка остаётся одной записью; междокументное сопоставление
+  // выполняется позже по коду, названию и источнику.
+  return source
+    .filter(function (item) {
+      return item.rowType === 'work';
+    })
+    .map(function (item) {
       return {
         ...item,
-        sourceTypes: [item.sourceType]
+        sourceTypes:
+          Array.from(
+            new Set([
+              ...(
+                Array.isArray(item.sourceTypes)
+                  ? item.sourceTypes
+                  : []
+              ),
+              item.sourceType
+            ].filter(Boolean))
+          )
       };
     });
-
-  scheduleWorks.forEach(function (schedule) {
-    const normalizedName =
-      normalizePdfTableText(
-        schedule.workName
-      );
-    const matching =
-      result.filter(function (item) {
-        return normalizePdfTableText(
-          item.workName
-        ) === normalizedName;
-      });
-
-    if (matching.length === 1) {
-      const target = matching[0];
-
-      target.startDate =
-        schedule.startDate;
-      target.finishDate =
-        schedule.finishDate;
-      target.pageNumbers =
-        Array.from(
-          new Set([
-            ...(target.pageNumbers || []),
-            ...(schedule.pageNumbers || [])
-          ])
-        ).sort(function (first, second) {
-          return first - second;
-        });
-      target.sourceTypes =
-        Array.from(
-          new Set([
-            ...(target.sourceTypes || []),
-            schedule.sourceType
-          ])
-        );
-      return;
-    }
-
-    result.push({
-      ...schedule,
-      sourceTypes: [schedule.sourceType]
-    });
-  });
-
-  return result;
 }
 
 function analyzePdfTablePages(
