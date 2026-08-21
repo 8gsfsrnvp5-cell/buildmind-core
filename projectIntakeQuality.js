@@ -1,11 +1,11 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.5
+   BUILDMIND PROJECT INTAKE QUALITY — V1.9
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.8';
+  'project-intake-quality-v1.9';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -1261,7 +1261,12 @@ function getProjectIntakeQualityApprovalSignature(
       'данного',
       'данной',
       'работ',
-      'работы'
+      'работы',
+      'повторно',
+      'указывает',
+      'указано',
+      'сообщает',
+      'отмечает'
     ]);
 
   return normalizeProjectIntakeQualityText(
@@ -1799,22 +1804,16 @@ function evaluateProjectIntakeQualityResult(
     const largeReadablePdf =
       totalPages >=
         PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES &&
-      readPagesCount >= minimumReadablePages;    const documentRole =
+      readPagesCount >= minimumReadablePages;
+    const documentRole =
       String(documentItem?.documentRole || '');
-
-    const documentKind =
-      String(documentItem?.kind || '');
 
     const expectedNoDownstream =
       [
         'agreement',
         'project-documentation',
         'other'
-      ].includes(documentRole) ||
-      [
-        'agreement',
-        'project-documentation'
-      ].includes(documentKind);
+      ].includes(documentRole);
     const maximumReasonableSections =
       Math.max(
         6,
