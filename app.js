@@ -2725,6 +2725,27 @@ function applySavedMaterialCandidateReview(
 let uploadedProjectDocuments = [];
 let projectDocumentsAnalysisBusy = false;
 
+const PROJECT_DOCUMENT_ROLE_OPTIONS = [
+  { value: 'auto', label: 'Автоопределение' },
+  { value: 'agreement', label: 'Договор' },
+  { value: 'project-documentation', label: 'Проектная документация' },
+  { value: 'work-volume', label: 'ВОР — ведомость объёмов работ' },
+  { value: 'schedule', label: 'ГПР — график производства работ' },
+  { value: 'specification', label: 'Спецификация / материалы' },
+  { value: 'other', label: 'Другой документ' }
+];
+
+function getProjectDocumentRoleOptions() {
+  return PROJECT_DOCUMENT_ROLE_OPTIONS.slice();
+}
+
+function normalizeProjectDocumentRole(value) {
+  const normalized = String(value || 'auto');
+  return PROJECT_DOCUMENT_ROLE_OPTIONS.some(function (option) {
+    return option.value === normalized;
+  }) ? normalized : 'auto';
+}
+
 function notifyProjectDocumentsChanged(
   action,
   documentIds
@@ -3085,7 +3106,7 @@ function renderProjectDocuments() {
   message.textContent =
     projectDocumentsAnalysisBusy
       ? 'BuildMind анализирует документы…'
-      : 'Документы готовы. Нажмите «Анализировать сейчас».';
+      : 'Назначьте тип каждого файла при необходимости и нажмите «Анализировать сейчас».';
 
   uploadedProjectDocuments.forEach(
     function (documentItem) {
@@ -3179,6 +3200,52 @@ if (
 
       main.appendChild(name);
       main.appendChild(meta);
+
+      const roleLabel =
+        document.createElement('label');
+
+      roleLabel.className =
+        'document-role-label';
+
+      roleLabel.textContent =
+        'Назначение файла';
+
+      const roleSelect =
+        document.createElement('select');
+
+      roleSelect.className =
+        'document-role-select';
+
+      roleSelect.dataset.documentId =
+        documentItem.id;
+
+      roleSelect.disabled =
+        projectDocumentsAnalysisBusy;
+
+      getProjectDocumentRoleOptions().forEach(
+        function (option) {
+          const optionElement =
+            document.createElement('option');
+
+          optionElement.value =
+            option.value;
+
+          optionElement.textContent =
+            option.label;
+
+          roleSelect.appendChild(
+            optionElement
+          );
+        }
+      );
+
+      roleSelect.value =
+        normalizeProjectDocumentRole(
+          documentItem.documentRole
+        );
+
+      roleLabel.appendChild(roleSelect);
+      main.appendChild(roleLabel);
 
       if (documentItem.analysis) {
   const analysisResult =
@@ -3360,6 +3427,27 @@ if (
   main.appendChild(
     analysisResult
   );
+
+  if (
+    Array.isArray(documentItem.agentReports) &&
+    documentItem.agentReports.length > 0
+  ) {
+    const agentTrace =
+      document.createElement('p');
+
+    agentTrace.className =
+      'document-agent-trace';
+
+    agentTrace.textContent =
+      'Отчёт агентов: ' +
+      documentItem.agentReports
+        .map(function (report) {
+          return report.agentId + ' — ' + report.status;
+        })
+        .join('; ');
+
+    main.appendChild(agentTrace);
+  }
         if (
   documentItem.analysis.success &&
   documentItem.analysis
@@ -3988,10 +4076,12 @@ function addProjectDocuments(fileList) {
 
     if (!alreadyExists) {
       uploadedProjectDocuments.push({
-  id,
-  file,
-  status: 'waiting'
-});
+        id,
+        file,
+        status: 'waiting',
+        documentRole: 'auto',
+        agentReports: []
+      });
 
 addedDocumentIds.push(
   id
@@ -4174,6 +4264,55 @@ notifyProjectDocumentsChanged(
   'removed',
   [documentId]
 );
+    }
+  );
+
+  list.addEventListener(
+    'change',
+    function (event) {
+      const roleSelect =
+        event.target.closest('.document-role-select');
+
+      if (!roleSelect || projectDocumentsAnalysisBusy) {
+        return;
+      }
+
+      const documentItem =
+        uploadedProjectDocuments.find(function (item) {
+          return item.id === roleSelect.dataset.documentId;
+        });
+
+      if (!documentItem) {
+        return;
+      }
+
+      const nextRole =
+        normalizeProjectDocumentRole(roleSelect.value);
+
+      if (
+        normalizeProjectDocumentRole(documentItem.documentRole) ===
+        nextRole
+      ) {
+        return;
+      }
+
+      documentItem.documentRole = nextRole;
+
+      if (
+        documentItem.status === 'analyzed' ||
+        documentItem.status === 'error'
+      ) {
+        documentItem.status = 'waiting';
+        documentItem.analysis = null;
+        documentItem.workVolumeAnalysis = null;
+        documentItem.agentReports = [];
+      }
+
+      renderProjectDocuments();
+      notifyProjectDocumentsChanged(
+        'role-changed',
+        [documentItem.id]
+      );
     }
   );
 
@@ -6256,6 +6395,34 @@ async function inspectPdfDocument(
       );
 
     if (
+      [
+        'work-volume',
+        'schedule'
+      ].includes(
+        String(options.documentRole || '')
+      )
+    ) {
+      detailPageNumbers =
+        getProjectDocumentUniquePages(
+          ocrAttemptedPages
+        ).slice(
+          0,
+          PROJECT_DOCUMENT_OCR_DETAIL_MAX_PAGES
+        );
+
+      notifyProjectDocumentAnalysisProgress(
+        documentItem,
+        {
+          stage: 'ocr-detail-plan',
+          pageNumber: 1,
+          totalPages: pdfDocument.numPages,
+          message:
+            'Для выбранного ВОР/ГПР включено точное чтение таблиц.'
+        }
+      );
+    }
+
+    if (
       priorityQuickComplete &&
       detailPageNumbers.length === 0
     ) {
@@ -6642,6 +6809,9 @@ window.BuildMindProjectDocuments = {
 
   getExtension:
     getProjectDocumentExtension,
+
+  getRoleOptions:
+    getProjectDocumentRoleOptions,
 
   chooseFiles:
     function () {
