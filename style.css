@@ -3572,3 +3572,168 @@ html[dir="rtl"] .project-intake-review-item blockquote {
   color: #53657d;
   font-size: 0.82rem;
 }
+
+
+/* Сквозная сводка анализа ВОР / ГПР */
+.workspace-analysis-summary,
+.workspace-analysis-table-card {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-analysis-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.workspace-analysis-head h2 {
+  margin: 5px 0 6px;
+}
+
+.workspace-analysis-head p {
+  margin: 0;
+}
+
+.workspace-analysis-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1747b0;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workspace-analysis-status-complete {
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.workspace-analysis-status-review {
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+.workspace-analysis-status-blocked {
+  background: var(--critical);
+  color: var(--critical-text);
+}
+
+.workspace-analysis-status-empty {
+  background: #eef1f5;
+  color: #53657d;
+}
+
+.workspace-analysis-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workspace-analysis-stats-compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workspace-analysis-stats div {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #cbd8ee;
+  border-radius: 11px;
+  background: #f5f8ff;
+}
+
+.workspace-analysis-stats strong {
+  display: block;
+  color: #164fcc;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.workspace-analysis-stats span {
+  display: block;
+  margin-top: 7px;
+  color: #53657d;
+  font-size: 12px;
+}
+
+.workspace-analysis-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workspace-analysis-actions .secondary-btn {
+  margin: 0;
+}
+
+.workspace-analysis-table-wrap {
+  max-height: 640px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.workspace-analysis-table {
+  min-width: 1180px;
+}
+
+.workspace-analysis-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #eef4ff;
+}
+
+.workspace-analysis-table td {
+  vertical-align: top;
+}
+
+.workspace-analysis-row-review {
+  background: #fffaf0;
+}
+
+.workspace-analysis-relation,
+.workspace-analysis-review-flag {
+  display: inline-flex;
+  margin: 0 5px 4px 0;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #edf2f8;
+  color: #44546a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workspace-analysis-relation-matched {
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.workspace-analysis-relation-schedule-only,
+.workspace-analysis-relation-volume-only,
+.workspace-analysis-review-flag {
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+@media (max-width: 900px) {
+  .workspace-analysis-stats,
+  .workspace-analysis-stats-compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .workspace-analysis-head {
+    flex-direction: column;
+  }
+
+  .workspace-analysis-stats,
+  .workspace-analysis-stats-compact {
+    grid-template-columns: 1fr;
+  }
+}

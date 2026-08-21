@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.9
+   BUILDMIND PROJECT INTAKE — V2.0
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.9';
+  'project-intake-v2.0';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -2367,7 +2367,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АНАЛИЗ КОМПЛЕКТА · V1.9
+          АНАЛИЗ КОМПЛЕКТА · V2.0
         </span>
 
         <h2>

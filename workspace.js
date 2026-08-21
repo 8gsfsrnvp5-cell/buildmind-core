@@ -496,6 +496,368 @@ function createDashboardOverview() {
 }
 
 
+function getWorkspaceAnalysisSnapshot() {
+  if (
+    !window.BuildMindProjectAnalysis ||
+    typeof window.BuildMindProjectAnalysis.getSnapshot !==
+      'function'
+  ) {
+    return null;
+  }
+
+  return window.BuildMindProjectAnalysis.getSnapshot();
+}
+
+
+function createWorkspaceAnalysisSummary() {
+  const section =
+    document.createElement('section');
+
+  section.id =
+    'workspaceAnalysisSummary';
+  section.className =
+    'card workspace-analysis-summary';
+  section.innerHTML = `
+    <div class="workspace-analysis-head">
+      <div>
+        <span class="workspace-page-eyebrow">
+          ПОСЛЕДНИЙ АНАЛИЗ КОМПЛЕКТА
+        </span>
+        <h2>Данные ВОР и ГПР</h2>
+        <p id="workspaceAnalysisSavedAt" class="muted">
+          Анализ ещё не выполнен
+        </p>
+      </div>
+      <span
+        id="workspaceAnalysisStatus"
+        class="workspace-analysis-status workspace-analysis-status-empty"
+      >
+        Нет данных
+      </span>
+    </div>
+
+    <div class="workspace-analysis-stats">
+      <div><strong id="workspaceAnalysisDocuments">0</strong><span>Документов</span></div>
+      <div><strong id="workspaceAnalysisVorRows">0</strong><span>Строк ВОР</span></div>
+      <div><strong id="workspaceAnalysisGprRows">0</strong><span>Строк ГПР</span></div>
+      <div><strong id="workspaceAnalysisMatched">0</strong><span>Связано ВОР ↔ ГПР</span></div>
+      <div><strong id="workspaceAnalysisReview">0</strong><span>Требует проверки</span></div>
+    </div>
+
+    <div class="workspace-analysis-actions">
+      <button
+        type="button"
+        class="secondary-btn"
+        data-workspace-open="works"
+      >
+        Открыть работы и ГПР
+      </button>
+      <button
+        type="button"
+        class="secondary-btn"
+        data-workspace-open="documents"
+      >
+        Открыть документы
+      </button>
+    </div>
+  `;
+
+  return section;
+}
+
+
+function createWorkspaceAnalysisWorks() {
+  const section =
+    document.createElement('section');
+
+  section.id =
+    'workspaceAnalysisWorks';
+  section.className =
+    'card workspace-analysis-table-card';
+  section.innerHTML = `
+    <div class="workspace-analysis-head">
+      <div>
+        <span class="workspace-page-eyebrow">
+          СКВОЗНАЯ СВЕРКА
+        </span>
+        <h2>Ведомость работ и календарный график</h2>
+        <p class="muted">
+          Строки ГПР связаны с ВОР по коду и наименованию.
+          Исходные значения не перезаписываются.
+        </p>
+      </div>
+      <span id="workspaceWorksAnalysisStatus" class="workspace-analysis-status">
+        Нет данных
+      </span>
+    </div>
+
+    <div class="workspace-analysis-stats workspace-analysis-stats-compact">
+      <div><strong id="workspaceWorksVorCount">0</strong><span>ВОР</span></div>
+      <div><strong id="workspaceWorksGprCount">0</strong><span>ГПР</span></div>
+      <div><strong id="workspaceWorksMatchedCount">0</strong><span>Связано</span></div>
+      <div><strong id="workspaceWorksReviewCount">0</strong><span>Проверить</span></div>
+    </div>
+
+    <div class="table-wrap workspace-analysis-table-wrap">
+      <table class="workspace-analysis-table">
+        <thead>
+          <tr>
+            <th>Код</th>
+            <th>Работа</th>
+            <th>Ед.</th>
+            <th>Количество ВОР</th>
+            <th>Количество ГПР</th>
+            <th>Начало</th>
+            <th>Окончание</th>
+            <th>Связь</th>
+            <th>Источник</th>
+          </tr>
+        </thead>
+        <tbody id="workspaceAnalysisWorksRows">
+          <tr><td colspan="9">Анализ комплекта ещё не выполнен.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  return section;
+}
+
+
+function createWorkspaceAnalysisMaterials() {
+  const section =
+    document.createElement('section');
+
+  section.id =
+    'workspaceAnalysisMaterials';
+  section.className =
+    'card workspace-analysis-table-card';
+  section.innerHTML = `
+    <div class="workspace-analysis-head">
+      <div>
+        <span class="workspace-page-eyebrow">
+          ИЗ ДОКУМЕНТОВ ПРОЕКТА
+        </span>
+        <h2>Материалы, найденные анализом</h2>
+        <p class="muted">
+          Кандидаты показаны отдельно от подтверждённого реестра материалов.
+        </p>
+      </div>
+      <span id="workspaceAnalysisMaterialsCount" class="workspace-analysis-status">
+        0 позиций
+      </span>
+    </div>
+
+    <div class="table-wrap workspace-analysis-table-wrap">
+      <table class="workspace-analysis-table">
+        <thead>
+          <tr>
+            <th>Материал</th>
+            <th>Ед.</th>
+            <th>Количество</th>
+            <th>Источник</th>
+          </tr>
+        </thead>
+        <tbody id="workspaceAnalysisMaterialRows">
+          <tr><td colspan="4">Материалы анализом не найдены.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  return section;
+}
+
+
+function setWorkspaceAnalysisText(id, value) {
+  const element = getWorkspaceElement(id);
+
+  if (element) {
+    element.textContent = String(value ?? '');
+  }
+}
+
+
+function formatWorkspaceAnalysisQuantity(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return value == null || value === ''
+      ? '—'
+      : String(value);
+  }
+
+  return number.toLocaleString('ru-RU', {
+    maximumFractionDigits: 4
+  });
+}
+
+
+function formatWorkspaceAnalysisDate(value) {
+  if (!value) {
+    return '—';
+  }
+
+  const isoDate = String(value).match(
+    /^(\d{4})-(\d{2})-(\d{2})$/
+  );
+
+  if (isoDate) {
+    return [
+      isoDate[3],
+      isoDate[2],
+      isoDate[1]
+    ].join('.');
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleDateString('ru-RU');
+}
+
+
+function renderWorkspaceAnalysis() {
+  const snapshot = getWorkspaceAnalysisSnapshot();
+  const summary = snapshot?.summary || {};
+  const statusLabels = {
+    complete: 'Анализ завершён',
+    review: 'Нужна проверка',
+    blocked: 'Анализ заблокирован'
+  };
+
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisDocuments',
+    summary.documentsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisVorRows',
+    summary.workVolumeRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisGprRows',
+    summary.scheduleRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisMatched',
+    summary.matchedScheduleRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisReview',
+    summary.reviewCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceWorksVorCount',
+    summary.workVolumeRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceWorksGprCount',
+    summary.scheduleRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceWorksMatchedCount',
+    summary.matchedScheduleRowsCount || 0
+  );
+  setWorkspaceAnalysisText(
+    'workspaceWorksReviewCount',
+    summary.reviewCount || 0
+  );
+
+  const status = getWorkspaceElement('workspaceAnalysisStatus');
+  const worksStatus = getWorkspaceElement('workspaceWorksAnalysisStatus');
+  const statusText = snapshot
+    ? statusLabels[snapshot.qualityStatus] || 'Результат сохранён'
+    : 'Нет данных';
+
+  [status, worksStatus].filter(Boolean).forEach(function (element) {
+    element.textContent = statusText;
+    element.className =
+      'workspace-analysis-status workspace-analysis-status-' +
+      (snapshot?.qualityStatus || 'empty');
+  });
+
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisSavedAt',
+    snapshot
+      ? 'Сохранено: ' +
+        new Date(snapshot.savedAt).toLocaleString('ru-RU') +
+        '. Данные восстановятся после обновления страницы.'
+      : 'Анализ ещё не выполнен'
+  );
+
+  const worksBody =
+    getWorkspaceElement('workspaceAnalysisWorksRows');
+
+  if (worksBody) {
+    const rows = Array.isArray(snapshot?.combinedRows)
+      ? snapshot.combinedRows
+      : [];
+    const relationLabels = {
+      matched: 'ВОР ↔ ГПР',
+      'schedule-only': 'Только ГПР',
+      'volume-only': 'Только ВОР'
+    };
+
+    worksBody.innerHTML = rows.length === 0
+      ? '<tr><td colspan="9">Анализ комплекта ещё не дал строк ВОР/ГПР.</td></tr>'
+      : rows.slice(0, 500).map(function (row) {
+          const sources = (row.sourceDocuments || []).join(', ') || '—';
+          const pages = (row.sourcePages || []).length > 0
+            ? ' · стр. ' + row.sourcePages.join(', ')
+            : '';
+
+          return `
+            <tr class="${row.requiresReview ? 'workspace-analysis-row-review' : ''}">
+              <td>${escapeWorkspaceHtml(row.workCode || '—')}</td>
+              <td><strong>${escapeWorkspaceHtml(row.workName || '—')}</strong></td>
+              <td>${escapeWorkspaceHtml(row.unit || '—')}</td>
+              <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisQuantity(row.vorQuantity))}</td>
+              <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisQuantity(row.gprQuantity))}</td>
+              <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisDate(row.startDate))}</td>
+              <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisDate(row.finishDate))}</td>
+              <td>
+                <span class="workspace-analysis-relation workspace-analysis-relation-${escapeWorkspaceHtml(row.status)}">
+                  ${escapeWorkspaceHtml(relationLabels[row.status] || row.status)}
+                </span>
+                ${row.requiresReview ? '<span class="workspace-analysis-review-flag">Проверить</span>' : ''}
+              </td>
+              <td>${escapeWorkspaceHtml(sources + pages)}</td>
+            </tr>
+          `;
+        }).join('');
+  }
+
+  const materialBody =
+    getWorkspaceElement('workspaceAnalysisMaterialRows');
+  const materials = Array.isArray(snapshot?.materials)
+    ? snapshot.materials
+    : [];
+
+  setWorkspaceAnalysisText(
+    'workspaceAnalysisMaterialsCount',
+    materials.length + ' поз.'
+  );
+
+  if (materialBody) {
+    materialBody.innerHTML = materials.length === 0
+      ? '<tr><td colspan="4">Материалы анализом не найдены.</td></tr>'
+      : materials.slice(0, 500).map(function (item) {
+          const sources = (item.sourceDocuments || []).join(', ') || '—';
+
+          return `
+            <tr>
+              <td><strong>${escapeWorkspaceHtml(item.workName || '—')}</strong></td>
+              <td>${escapeWorkspaceHtml(item.unit || '—')}</td>
+              <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisQuantity(item.quantity))}</td>
+              <td>${escapeWorkspaceHtml(sources)}</td>
+            </tr>
+          `;
+        }).join('');
+  }
+}
+
+
 function moveWorkspaceNode(
   node,
   target
@@ -644,6 +1006,10 @@ const projectIntake =
     createDashboardProjectCard()
   );
 
+  views.dashboard.appendChild(
+    createWorkspaceAnalysisSummary()
+  );
+
   moveWorkspaceNode(
     operationalCenter,
     views.dashboard
@@ -711,13 +1077,7 @@ moveWorkspaceNode(
   );
 
   views.works.appendChild(
-    createWorkspacePlaceholder(
-      'График производства работ',
-
-      'Здесь будет единое представление ГПР, ' +
-      'объёмов, сроков, исходного плана, действующего плана и факта ' +
-      'и отклонений.'
-    )
+    createWorkspaceAnalysisWorks()
   );
 
 
@@ -734,6 +1094,10 @@ moveWorkspaceNode(
       'Полный реестр потребности, остатков, ' +
       'резервов, поставок, дефицита и риска по материалам.'
     )
+  );
+
+  views.materials.appendChild(
+    createWorkspaceAnalysisMaterials()
   );
 
   moveWorkspaceNode(
@@ -1291,6 +1655,15 @@ function initializeWorkspaceObservers() {
     'buildmind:document-registry-changed',
     updateWorkspaceDashboard
   );
+
+
+  window.addEventListener(
+    'buildmind:project-analysis-snapshot-changed',
+    function () {
+      renderWorkspaceAnalysis();
+      updateWorkspaceDashboard();
+    }
+  );
 }
 
 
@@ -1370,6 +1743,7 @@ function initializeBuildMindWorkspace() {
   initializeWorkspaceObservers();
 
   updateWorkspaceDashboard();
+  renderWorkspaceAnalysis();
 
 
   window
