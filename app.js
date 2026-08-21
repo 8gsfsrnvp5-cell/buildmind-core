@@ -2746,6 +2746,52 @@ function normalizeProjectDocumentRole(value) {
   }) ? normalized : 'auto';
 }
 
+function inferProjectDocumentRoleFromFile(file) {
+  const fileName =
+    String(file?.name || file || '')
+      .toLowerCase()
+      .replace(/ё/g, 'е');
+
+  if (!fileName) {
+    return 'auto';
+  }
+
+  if (
+    /(?:^|[\s._-])вор(?:[\s._-]|$)/.test(fileName) ||
+    /ведомост[а-я]*\s+(?:объем|обьем)[а-я]*\s+работ/.test(fileName)
+  ) {
+    return 'work-volume';
+  }
+
+  if (
+    /(?:^|[\s._-])гпр(?:[\s._-]|$)/.test(fileName) ||
+    /график[а-я]*\s+производств[а-я]*\s+работ/.test(fileName)
+  ) {
+    return 'schedule';
+  }
+
+  if (
+    /спецификац|ведомост[а-я]*\s+материал/.test(fileName)
+  ) {
+    return 'specification';
+  }
+
+  if (
+    /договор|контракт|соглашени/.test(fileName)
+  ) {
+    return 'agreement';
+  }
+
+  if (
+    /проектн|рабоч[а-я]*\s+документац/.test(fileName)
+  ) {
+    return 'project-documentation';
+  }
+
+  return 'auto';
+}
+
+
 function notifyProjectDocumentsChanged(
   action,
   documentIds
@@ -4075,11 +4121,19 @@ function addProjectDocuments(fileList) {
       );
 
     if (!alreadyExists) {
+      const inferredRole =
+        inferProjectDocumentRoleFromFile(file);
+
       uploadedProjectDocuments.push({
         id,
         file,
         status: 'waiting',
-        documentRole: 'auto',
+        documentRole:
+          inferredRole,
+        documentRoleSource:
+          inferredRole === 'auto'
+            ? 'auto'
+            : 'filename',
         agentReports: []
       });
 
@@ -4297,6 +4351,8 @@ notifyProjectDocumentsChanged(
       }
 
       documentItem.documentRole = nextRole;
+      documentItem.documentRoleSource =
+        'user';
 
       if (
         documentItem.status === 'analyzed' ||
@@ -6812,6 +6868,9 @@ window.BuildMindProjectDocuments = {
 
   getRoleOptions:
     getProjectDocumentRoleOptions,
+
+  inferRole:
+    inferProjectDocumentRoleFromFile,
 
   chooseFiles:
     function () {
