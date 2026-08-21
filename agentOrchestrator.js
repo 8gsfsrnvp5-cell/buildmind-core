@@ -213,7 +213,6 @@ async function runBuildMindAgent(
       }
     );
 
-    const cancelled =  } catch (error) {
     const cancelled =
       error &&
       (
