@@ -63,7 +63,7 @@ assert.equal(
   true
 );
 assert.equal(
-  intake.includes('АНАЛИЗ КОМПЛЕКТА · V1.9'),
+  intake.includes('АНАЛИЗ КОМПЛЕКТА · V2.0'),
   true
 );
 assert.equal(
