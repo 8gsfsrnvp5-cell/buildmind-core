@@ -124,12 +124,13 @@ async function run() {
     summary.reportCount,
     2
   );
-  assert.deepEqual(
-    summary.agentIds.sort(),
-    [
-      'test-material-agent',
-      'test-pdf-agent'
-    ]
+  assert.equal(
+    Array.from(
+      summary.agentIds
+    )
+      .sort()
+      .join(','),
+    'test-material-agent,test-pdf-agent'
   );
   assert.equal(
     summary.statusCounts.completed,
