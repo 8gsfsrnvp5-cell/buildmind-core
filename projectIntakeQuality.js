@@ -5,7 +5,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.6';
+  'project-intake-quality-v1.7';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -1301,126 +1301,109 @@ function groupProjectIntakeQualityApprovals(
   const groups = [];
 
   (
-    Array.isArray(
-      candidates
-    )
+    Array.isArray(candidates)
       ? candidates
       : []
-  ).forEach(
-    function (
-      candidate
-    ) {
-      const signature =
-        getProjectIntakeQualityApprovalSignature(
-          candidate.context
+  ).forEach(function (candidate) {
+    const signature =
+      getProjectIntakeQualityApprovalSignature(
+        candidate.context
+      );
+    const topic =
+      candidate.topic ||
+      candidate.type ||
+      'approval';
+    const sourceFile =
+      String(candidate.fileName || '');
+
+    const existing =
+      groups.find(function (group) {
+        const sameExactMeaning =
+          Boolean(signature) &&
+          group.signature === signature &&
+          group.type === candidate.type &&
+          group.organization === candidate.organization &&
+          group.intent === candidate.intent &&
+          group.topic === topic;
+
+        const sameNearbyOccurrence =
+          sourceFile &&
+          group.fileName === sourceFile &&
+          Number.isFinite(group.matchIndex) &&
+          Number.isFinite(candidate.matchIndex) &&
+          group.pageNumber === candidate.pageNumber &&
+          Math.abs(
+            group.matchIndex -
+            candidate.matchIndex
+          ) <= 140;
+
+        return (
+          sameExactMeaning ||
+          sameNearbyOccurrence
         );
+      });
 
-      const topic =
-        candidate.topic ||
-        candidate.type ||
-        'approval';
-
-      const existing =
-        groups.find(
-          function (
-            group
-          ) {
-            const sameNearbyOccurrence =
-              Number.isFinite(
-                group.matchIndex
-              ) &&
-              Number.isFinite(
-                candidate.matchIndex
-              ) &&
-              group.pageNumber ===
-                candidate.pageNumber &&
-              Math.abs(
-                group.matchIndex -
-                candidate.matchIndex
-              ) <= 140;
-
-            return (
-              group.type ===
-                candidate.type &&
-              group.organization ===
-                candidate.organization &&
-              group.intent ===
-                candidate.intent &&
-              group.fileName ===
-                candidate.fileName &&
-              (
-                group.topic ===
-                  topic ||
-                sameNearbyOccurrence
-              )
-            );
-          }
-        );
-
+    if (existing) {
       if (
-        existing
+        !existing.pageNumbers.includes(
+          candidate.pageNumber
+        )
       ) {
-        if (
-          !existing
-            .pageNumbers
-            .includes(
-              candidate.pageNumber
-            )
-        ) {
-          existing
-            .pageNumbers
-            .push(
-              candidate.pageNumber
-            );
-        }
-
-        existing
-          .occurrenceCount +=
-          1;
-
-        return;
+        existing.pageNumbers.push(
+          candidate.pageNumber
+        );
       }
 
-      groups.push({
-        ...candidate,
-
-        signature,
-
-        topic,
-
-        pageNumbers: [
-          candidate.pageNumber
-        ],
-
-        occurrenceCount:
-          1
-      });
-    }
-  );
-
-  groups.forEach(
-    function (
-      group
-    ) {
-      group
-        .pageNumbers
-        .sort(
-          function (
-            first,
-            second
-          ) {
-            return (
-              first -
-              second
-            );
-          }
+      existing.sourceFiles =
+        Array.from(
+          new Set([
+            ...(existing.sourceFiles || []),
+            sourceFile
+          ].filter(Boolean))
         );
 
-      group.pageNumber =
-        group.pageNumbers[0] ||
-        null;
+      existing.sourceEvidence =
+        [
+          ...(existing.sourceEvidence || []),
+          {
+            fileName: sourceFile,
+            pageNumber:
+              candidate.pageNumber || null
+          }
+        ];
+
+      existing.occurrenceCount += 1;
+      return;
     }
-  );
+
+    groups.push({
+      ...candidate,
+      signature,
+      topic,
+      sourceFiles:
+        sourceFile ? [sourceFile] : [],
+      sourceEvidence: [
+        {
+          fileName: sourceFile,
+          pageNumber:
+            candidate.pageNumber || null
+        }
+      ],
+      pageNumbers: [
+        candidate.pageNumber
+      ].filter(Boolean),
+      occurrenceCount: 1
+    });
+  });
+
+  groups.forEach(function (group) {
+    group.pageNumbers.sort(function (first, second) {
+      return first - second;
+    });
+
+    group.pageNumber =
+      group.pageNumbers[0] || null;
+  });
 
   return groups;
 }

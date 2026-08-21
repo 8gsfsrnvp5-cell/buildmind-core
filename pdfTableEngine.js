@@ -9,7 +9,7 @@
    ================================================== */
 
 const BUILDMIND_PDF_TABLE_ENGINE_VERSION =
-  'pdf-table-engine-v1.1';
+  'pdf-table-engine-v1.2';
 
 const PDF_TABLE_UNIT_SOURCE =
   '(?:п\\.?\\s*м\\.?|пог\\.?\\s*м\\.?|м[23²³]?|км|шт\\.?|штук|компл\\.?|комплект(?:ов)?|кг|т|л|рул\\.?|рулон)';
@@ -221,6 +221,205 @@ function extractPdfTableDates(value) {
 
   return dates;
 }
+
+function getPdfTableDateYear(value) {
+  const match =
+    /^(\d{4})-\d{2}-\d{2}$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? Number(match[1])
+    : null;
+}
+
+function replacePdfTableDateYear(
+  value,
+  year
+) {
+  return String(year) +
+    String(value || '').slice(4);
+}
+
+function getPdfTableScheduleReferenceYear(
+  candidates,
+  options = {}
+) {
+  const fileYears =
+    (
+      String(options.sourceDocument || '')
+        .match(/(?:19|20)\d{2}/g) || []
+    )
+      .map(Number)
+      .filter(function (year) {
+        return year >= 2000 && year <= 2100;
+      });
+
+  if (fileYears.length > 0) {
+    return fileYears[fileYears.length - 1];
+  }
+
+  const counts = new Map();
+
+  (Array.isArray(candidates) ? candidates : [])
+    .forEach(function (candidate) {
+      [
+        candidate?.startDate,
+        candidate?.finishDate
+      ].forEach(function (value) {
+        const year =
+          getPdfTableDateYear(value);
+
+        if (
+          Number.isInteger(year) &&
+          year >= 2000 &&
+          year <= 2100
+        ) {
+          counts.set(
+            year,
+            Number(counts.get(year) || 0) + 1
+          );
+        }
+      });
+    });
+
+  const ranked =
+    Array.from(counts.entries())
+      .filter(function (entry) {
+        return entry[1] >= 2;
+      })
+      .sort(function (first, second) {
+        return second[1] - first[1] ||
+          first[0] - second[0];
+      });
+
+  return ranked.length > 0
+    ? ranked[0][0]
+    : null;
+}
+
+function isPdfTableOcrYearVariant(
+  year,
+  referenceYear
+) {
+  const source =
+    String(year || '');
+  const reference =
+    String(referenceYear || '');
+
+  return (
+    /^20\d{2}$/.test(source) &&
+    /^20\d{2}$/.test(reference) &&
+    source !== reference &&
+    source.slice(0, 2) ===
+      reference.slice(0, 2) &&
+    source.charAt(3) ===
+      reference.charAt(3) &&
+    Math.abs(
+      Number(source) -
+      Number(reference)
+    ) >= 10 &&
+    Math.abs(
+      Number(source) -
+      Number(reference)
+    ) <= 40
+  );
+}
+
+function normalizePdfTableScheduleYears(
+  candidates,
+  options = {}
+) {
+  const referenceYear =
+    getPdfTableScheduleReferenceYear(
+      candidates,
+      options
+    );
+
+  if (!referenceYear) {
+    return Array.isArray(candidates)
+      ? candidates
+      : [];
+  }
+
+  return (
+    Array.isArray(candidates)
+      ? candidates
+      : []
+  ).map(function (candidate) {
+    if (
+      candidate?.sourceType !==
+      'pdf-schedule'
+    ) {
+      return candidate;
+    }
+
+    const corrections = [];
+    const normalized = {
+      ...candidate
+    };
+
+    [
+      ['startDate', 'start'],
+      ['finishDate', 'finish']
+    ].forEach(function (setting) {
+      const field = setting[0];
+      const year =
+        getPdfTableDateYear(
+          candidate[field]
+        );
+
+      if (
+        isPdfTableOcrYearVariant(
+          year,
+          referenceYear
+        )
+      ) {
+        const corrected =
+          replacePdfTableDateYear(
+            candidate[field],
+            referenceYear
+          );
+
+        corrections.push({
+          field: setting[1],
+          from: candidate[field],
+          to: corrected
+        });
+
+        normalized[field] = corrected;
+      }
+    });
+
+    if (corrections.length === 0) {
+      return candidate;
+    }
+
+    return {
+      ...normalized,
+      originalStartDate:
+        candidate.startDate,
+      originalFinishDate:
+        candidate.finishDate,
+      dateCorrections: corrections,
+      scheduleReviewRequired: true,
+      scheduleReviewReasons: [
+        ...(
+          Array.isArray(
+            candidate.scheduleReviewReasons
+          )
+            ? candidate.scheduleReviewReasons
+            : []
+        ),
+        'Год даты исправлен по преобладающему году ГПР; требуется подтверждение инженером.'
+      ],
+      evidence:
+        String(candidate.evidence || '') +
+        ' · год OCR нормализован'
+    };
+  });
+}
+
 
 function isPdfTableHeadingOrTotal(value) {
   const text =
@@ -1035,16 +1234,23 @@ function analyzePdfTablePages(
     deduplicatePdfTableCandidates(
       candidates
     );
+  const normalizedCandidates =
+    normalizePdfTableScheduleYears(
+      uniqueCandidates,
+      {
+        sourceDocument
+      }
+    );
   const works =
     mergePdfTableWorks(
-      uniqueCandidates
+      normalizedCandidates
     );
   const materials =
-    uniqueCandidates.filter(function (item) {
+    normalizedCandidates.filter(function (item) {
       return item.rowType === 'material';
     });
   const uncertain =
-    uniqueCandidates.filter(function (item) {
+    normalizedCandidates.filter(function (item) {
       return item.rowType === 'uncertain';
     });
 
@@ -1062,12 +1268,12 @@ function analyzePdfTablePages(
     contextSections,
     pagesConsidered,
     candidateRowsCount:
-      uniqueCandidates.length,
+      normalizedCandidates.length,
     works,
     materials,
     uncertain,
     candidates:
-      uniqueCandidates,
+      normalizedCandidates,
     pagesAnalyzed:
       Array.from(
         new Set(
@@ -1096,6 +1302,8 @@ const BuildMindPdfTableApi = {
     parsePdfTableLayoutVolumeRow,
   parseScheduleRow:
     parsePdfTableScheduleRow,
+  normalizeScheduleYears:
+    normalizePdfTableScheduleYears,
   analyzePages:
     analyzePdfTablePages
 };

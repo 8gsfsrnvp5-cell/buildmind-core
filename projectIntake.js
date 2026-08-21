@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.7';
+  'project-intake-v1.8';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -294,6 +294,29 @@ function getProjectIntakeDocumentRole(documentItem, options = {}) {
   ) ? requestedRole : 'auto';
 }
 
+function getProjectIntakeDocumentRoleSource(
+  documentItem
+) {
+  return documentItem?.documentRoleSource ===
+    'filename'
+    ? 'filename'
+    : getProjectIntakeDocumentRole(documentItem) !==
+        'auto'
+      ? 'user'
+      : 'auto';
+}
+
+function getProjectIntakeDocumentRoleEvidence(
+  documentItem
+) {
+  return getProjectIntakeDocumentRoleSource(
+    documentItem
+  ) === 'filename'
+    ? 'Тип определён по названию файла'
+    : 'Назначение файла выбрано пользователем';
+}
+
+
 function getProjectIntakeDocumentRoleLabel(role) {
   return PROJECT_INTAKE_DOCUMENT_ROLE_LABELS[role] ||
     PROJECT_INTAKE_DOCUMENT_ROLE_LABELS.auto;
@@ -327,12 +350,22 @@ function createProjectIntakeExplicitSection(documentItem, role) {
     kind: role,
     label: getProjectIntakeDocumentRoleLabel(role),
     confidence: 'high',
-    source: 'Назначение файла выбрано пользователем',
+    source:
+      getProjectIntakeDocumentRoleEvidence(
+        documentItem
+      ),
     pageNumbers,
     anchorPages: pageNumbers.slice(0, 3),
     startPage: pageNumbers[0] || null,
     endPage: pageNumbers[pageNumbers.length - 1] || null,
-    userAssigned: true
+    userAssigned:
+      getProjectIntakeDocumentRoleSource(
+        documentItem
+      ) === 'user',
+    filenameAssigned:
+      getProjectIntakeDocumentRoleSource(
+        documentItem
+      ) === 'filename'
   };
 }
 
@@ -346,7 +379,10 @@ function applyProjectIntakeDocumentRole(classification, documentItem, options = 
   return {
     kind: role,
     confidence: 'high',
-    source: 'Назначение файла выбрано пользователем',
+    source:
+      getProjectIntakeDocumentRoleEvidence(
+        documentItem
+      ),
     requestedRole: role,
     requestedRoleLabel: getProjectIntakeDocumentRoleLabel(role),
     detectedKind: classification?.kind || 'other',
@@ -1313,6 +1349,140 @@ function mergeProjectIntakePdfCandidates(
   return result;
 }
 
+function normalizeProjectIntakeAggregateText(
+  value
+) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeProjectIntakeAggregateQuantity(
+  value
+) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric)
+    ? String(numeric)
+    : String(value ?? '').trim();
+}
+
+function getProjectIntakeAggregateCandidateKey(
+  candidate,
+  type
+) {
+  return [
+    type,
+    normalizeProjectIntakeAggregateText(
+      candidate?.workName ||
+      candidate?.name
+    ),
+    normalizeProjectIntakeAggregateText(
+      candidate?.unit
+    ),
+    normalizeProjectIntakeAggregateQuantity(
+      candidate?.quantity
+    ),
+    String(candidate?.startDate || ''),
+    String(candidate?.finishDate || '')
+  ].join('|');
+}
+
+function mergeProjectIntakeAggregateCandidates(
+  candidates,
+  type
+) {
+  const result = [];
+  const byKey = new Map();
+
+  (Array.isArray(candidates) ? candidates : [])
+    .forEach(function (candidate) {
+      const key =
+        getProjectIntakeAggregateCandidateKey(
+          candidate,
+          type
+        );
+
+      if (!key || /\|\|\|\|\|$/.test(key)) {
+        return;
+      }
+
+      const sourceDocuments =
+        [
+          candidate?.fileName,
+          candidate?.sourceDocument
+        ].filter(Boolean);
+      const sourcePages =
+        [
+          ...(Array.isArray(candidate?.pageNumbers)
+            ? candidate.pageNumbers
+            : []),
+          candidate?.pageNumber
+        ]
+          .map(Number)
+          .filter(Number.isFinite);
+
+      if (!byKey.has(key)) {
+        const normalized = {
+          ...candidate,
+          sourceDocuments:
+            Array.from(
+              new Set(sourceDocuments)
+            ),
+          sourcePages:
+            Array.from(
+              new Set(sourcePages)
+            ).sort(function (first, second) {
+              return first - second;
+            }),
+          occurrenceCount: 1
+        };
+
+        byKey.set(key, normalized);
+        result.push(normalized);
+        return;
+      }
+
+      const existing = byKey.get(key);
+
+      existing.sourceDocuments =
+        Array.from(
+          new Set([
+            ...(existing.sourceDocuments || []),
+            ...sourceDocuments
+          ])
+        );
+
+      existing.sourcePages =
+        Array.from(
+          new Set([
+            ...(existing.sourcePages || []),
+            ...sourcePages
+          ])
+        ).sort(function (first, second) {
+          return first - second;
+        });
+
+      existing.sourceTypes =
+        Array.from(
+          new Set([
+            ...(existing.sourceTypes || []),
+            ...(candidate?.sourceTypes || []),
+            candidate?.sourceType
+          ].filter(Boolean))
+        );
+
+      existing.occurrenceCount =
+        Number(existing.occurrenceCount || 1) + 1;
+    });
+
+  return result;
+}
+
+
 async function analyzeProjectIntakePdf(
   documentItem,
   options = {}
@@ -2149,7 +2319,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АНАЛИЗ КОМПЛЕКТА · V1.5
+          АНАЛИЗ КОМПЛЕКТА · V1.8
         </span>
 
         <h2>
@@ -3319,7 +3489,13 @@ async function runBuildMindProjectIntake() {
       [],
 
     agentSummary:
-      null
+      null,
+
+    duplicates: {
+      works: 0,
+      materials: 0,
+      approvals: 0
+    }
   };
 
   try {
@@ -3557,6 +3733,9 @@ async function runBuildMindProjectIntake() {
 
         documentRole:
           getProjectIntakeDocumentRole(documentItem),
+
+        documentRoleSource:
+          getProjectIntakeDocumentRoleSource(documentItem),
 
         kind:
           classification.kind,
@@ -3923,6 +4102,58 @@ async function runBuildMindProjectIntake() {
           });
       }
     }
+
+    const rawWorksCount =
+      result.works.length;
+    const rawMaterialsCount =
+      result.materials.length;
+    const rawApprovalsCount =
+      result.approvals.length;
+
+    result.works =
+      mergeProjectIntakeAggregateCandidates(
+        result.works,
+        'work'
+      );
+
+    result.materials =
+      mergeProjectIntakeAggregateCandidates(
+        result.materials,
+        'material'
+      );
+
+    if (
+      window.BuildMindProjectIntakeQuality &&
+      typeof window
+        .BuildMindProjectIntakeQuality
+        .groupApprovals === 'function'
+    ) {
+      result.approvals =
+        window.BuildMindProjectIntakeQuality
+          .groupApprovals(result.approvals);
+    }
+
+    result.worksCount =
+      result.works.length;
+    result.materialsCount =
+      result.materials.length;
+    result.duplicates = {
+      works:
+        Math.max(
+          rawWorksCount - result.worksCount,
+          0
+        ),
+      materials:
+        Math.max(
+          rawMaterialsCount - result.materialsCount,
+          0
+        ),
+      approvals:
+        Math.max(
+          rawApprovalsCount - result.approvals.length,
+          0
+        )
+    };
 
     result
       .approvals
