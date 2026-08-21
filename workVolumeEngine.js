@@ -1759,7 +1759,6 @@ function analyzeWorkVolumeRows(
         'schedule-table';
 
     const isSupplySchedule =
-      isScheduleTable &&
       /график\s+постав|поставк|\bмтр\b|материал/.test(
         String(
           sourceDocument +
