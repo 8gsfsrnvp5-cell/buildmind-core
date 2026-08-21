@@ -5130,6 +5130,18 @@ const PROJECT_DOCUMENT_OCR_DETAIL_PAGE_TIMEOUT_MS =
 const PROJECT_DOCUMENT_OCR_DOCUMENT_TIMEOUT_MS =
   300000;
 
+const PROJECT_DOCUMENT_FILE_READ_TIMEOUT_MS =
+  30000;
+
+const PROJECT_DOCUMENT_PDF_LOAD_TIMEOUT_MS =
+  120000;
+
+const PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS =
+  30000;
+
+const PROJECT_DOCUMENT_PDF_TEXT_TIMEOUT_MS =
+  30000;
+
 const PROJECT_DOCUMENT_OCR_FAST_SCALE =
   1.33;
 
@@ -5308,6 +5320,160 @@ function throwIfProjectDocumentAnalysisCancelled(
   }
 }
 
+function awaitProjectDocumentOperation(
+  operation,
+  options = {}
+) {
+  const settings =
+    options &&
+    typeof options === 'object'
+      ? options
+      : {};
+
+  const signal =
+    settings.signal || null;
+
+  const timeoutMs =
+    Math.max(
+      1000,
+      Number(settings.timeoutMs) || 30000
+    );
+
+  return new Promise(function (
+    resolve,
+    reject
+  ) {
+    let settled = false;
+
+    let timer = null;
+
+    function cleanup() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      if (
+        signal &&
+        typeof signal.removeEventListener ===
+          'function'
+      ) {
+        signal.removeEventListener(
+          'abort',
+          onAbort
+        );
+      }
+    }
+
+    function settle(
+      handler,
+      value
+    ) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      handler(value);
+    }
+
+    function onAbort() {
+      settle(
+        reject,
+        createProjectDocumentAbortError()
+      );
+    }
+
+    if (
+      signal &&
+      signal.aborted
+    ) {
+      onAbort();
+      return;
+    }
+
+    if (
+      signal &&
+      typeof signal.addEventListener ===
+        'function'
+    ) {
+      signal.addEventListener(
+        'abort',
+        onAbort,
+        { once: true }
+      );
+    }
+
+    timer = setTimeout(
+      function () {
+        if (
+          typeof settings.onTimeout ===
+            'function'
+        ) {
+          try {
+            settings.onTimeout();
+          } catch (cleanupError) {
+            console.warn(
+              'Не удалось остановить зависшую операцию PDF:',
+              cleanupError
+            );
+          }
+        }
+
+        const error =
+          new Error(
+            settings.message ||
+              'Операция PDF превысила допустимое время.'
+          );
+
+        error.name =
+          'TimeoutError';
+
+        error.code =
+          settings.code ||
+          'PDF_OPERATION_TIMEOUT';
+
+        settle(
+          reject,
+          error
+        );
+      },
+      timeoutMs
+    );
+
+    let pending;
+
+    try {
+      pending =
+        operation();
+    } catch (error) {
+      settle(
+        reject,
+        error
+      );
+      return;
+    }
+
+    Promise.resolve(
+      pending
+    ).then(
+      function (value) {
+        settle(
+          resolve,
+          value
+        );
+      },
+      function (error) {
+        settle(
+          reject,
+          error
+        );
+      }
+    );
+  });
+}
+
 function yieldProjectDocumentAnalysis() {
   return new Promise(function (resolve) {
     setTimeout(resolve, 0);
@@ -5456,7 +5622,20 @@ async function inspectPdfDocument(
     );
 
     const fileBuffer =
-      await documentItem.file.arrayBuffer();
+      await awaitProjectDocumentOperation(
+        function () {
+          return documentItem.file.arrayBuffer();
+        },
+        {
+          signal,
+          timeoutMs:
+            PROJECT_DOCUMENT_FILE_READ_TIMEOUT_MS,
+          code:
+            'PDF_FILE_READ_TIMEOUT',
+          message:
+            'Чтение файла PDF превысило 30 секунд.'
+        }
+      );
 
     throwIfProjectDocumentAnalysisCancelled(
       signal
@@ -5468,7 +5647,29 @@ async function inspectPdfDocument(
       });
 
     pdfDocument =
-      await loadingTask.promise;
+      await awaitProjectDocumentOperation(
+        function () {
+          return loadingTask.promise;
+        },
+        {
+          signal,
+          timeoutMs:
+            PROJECT_DOCUMENT_PDF_LOAD_TIMEOUT_MS,
+          code:
+            'PDF_LOAD_TIMEOUT',
+          message:
+            'Открытие PDF превысило 2 минуты.',
+          onTimeout:
+            function () {
+              if (
+                typeof loadingTask.destroy ===
+                  'function'
+              ) {
+                loadingTask.destroy();
+              }
+            }
+        }
+      );
 
     throwIfProjectDocumentAnalysisCancelled(
       signal
@@ -5503,14 +5704,56 @@ async function inspectPdfDocument(
         signal
       );
 
+      notifyProjectDocumentAnalysisProgress(
+        documentItem,
+        {
+          stage:
+            'pdf-text',
+          pageNumber,
+          totalPages:
+            pdfDocument.numPages,
+          message:
+            'Читается текст PDF: страница ' +
+            pageNumber +
+            ' из ' +
+            pdfDocument.numPages
+        }
+      );
+
       const page =
-        await pdfDocument.getPage(
-          pageNumber
+        await awaitProjectDocumentOperation(
+          function () {
+            return pdfDocument.getPage(
+              pageNumber
+            );
+          },
+          {
+            signal,
+            timeoutMs:
+              PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS,
+            code:
+              'PDF_PAGE_TIMEOUT',
+            message:
+              'Чтение страницы PDF превысило 30 секунд.'
+          }
         );
 
       try {
         const textContent =
-          await page.getTextContent();
+          await awaitProjectDocumentOperation(
+            function () {
+              return page.getTextContent();
+            },
+            {
+              signal,
+              timeoutMs:
+                PROJECT_DOCUMENT_PDF_TEXT_TIMEOUT_MS,
+              code:
+                'PDF_TEXT_TIMEOUT',
+              message:
+                'Извлечение текстового слоя страницы превысило 30 секунд.'
+            }
+          );
 
         const extractedText =
           extractProjectDocumentPageText(
@@ -5746,8 +5989,21 @@ async function inspectPdfDocument(
       );
 
       const page =
-        await pdfDocument.getPage(
-          pageNumber
+        await awaitProjectDocumentOperation(
+          function () {
+            return pdfDocument.getPage(
+              pageNumber
+            );
+          },
+          {
+            signal,
+            timeoutMs:
+              PROJECT_DOCUMENT_PDF_PAGE_TIMEOUT_MS,
+            code:
+              'PDF_PAGE_TIMEOUT',
+            message:
+              'Чтение страницы PDF превысило 30 секунд.'
+          }
         );
 
       try {
@@ -6259,6 +6515,20 @@ async function inspectPdfDocument(
     ) {
       errorMessage =
         'PDF защищён паролем.';
+    } else if (
+      error &&
+      [
+        'PDF_FILE_READ_TIMEOUT',
+        'PDF_LOAD_TIMEOUT',
+        'PDF_PAGE_TIMEOUT',
+        'PDF_TEXT_TIMEOUT'
+      ].includes(
+        error.code
+      )
+    ) {
+      errorMessage =
+        error.message ||
+        'Операция PDF превысила допустимое время.';
     }
 
     return {
