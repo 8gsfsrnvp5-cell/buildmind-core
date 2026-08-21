@@ -1775,6 +1775,78 @@ function registerProjectIntakeAgents() {
         };
       }
   });
+
+  orchestrator.register({
+    id:
+      'quantity-calculation-agent',
+
+    taskType:
+      'calculation.quantity',
+
+    label:
+      'Агент расчёта объёмов',
+
+    run:
+      function (input) {
+        const engine =
+          window.BuildMindWorkQuantity;
+
+        const context =
+          input?.context ||
+          (
+            window.BuildMindWorkContexts &&
+            typeof window
+              .BuildMindWorkContexts
+              .getActive ===
+              'function'
+              ? window
+                  .BuildMindWorkContexts
+                  .getActive()
+              : null
+          );
+
+        if (
+          !engine ||
+          typeof engine.find !==
+            'function'
+        ) {
+          return {
+            success: false,
+
+            errorCode:
+              'QUANTITY_ENGINE_NOT_AVAILABLE',
+
+            errorMessage:
+              'Локальный движок расчёта объёма не загружен.'
+          };
+        }
+
+        if (!context) {
+          return {
+            success: false,
+
+            errorCode:
+              'ACTIVE_CONTEXT_NOT_FOUND',
+
+            errorMessage:
+              'Для расчёта объёма нужно выбрать контекст работы.'
+          };
+        }
+
+        return engine.find({
+          context,
+
+          documents:
+            Array.isArray(
+              input?.documents
+            )
+              ? input.documents
+              : input?.documentItem
+                ? [input.documentItem]
+                : []
+        });
+      }
+  });
 }
 
 function getProjectIntakeScheduleReviewItems(
