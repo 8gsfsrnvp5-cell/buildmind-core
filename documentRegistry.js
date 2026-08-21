@@ -307,6 +307,269 @@ function getActiveRegistryProjectNodeId() {
 }
 
 
+function normalizeDocumentRegistryAnalysisKey(
+  documentItem
+) {
+  return [
+    String(documentItem?.fileName || '')
+      .trim()
+      .toLowerCase(),
+    documentItem?.documentRole ||
+      documentItem?.kind ||
+      'other'
+  ].join('|');
+}
+
+
+function getDocumentRegistryAnalysisKind(
+  documentItem
+) {
+  const role =
+    documentItem?.documentRole || '';
+
+  if (
+    Object.prototype.hasOwnProperty.call(
+      DOCUMENT_REGISTRY_KIND_LABELS,
+      role
+    )
+  ) {
+    return role;
+  }
+
+  const kind =
+    documentItem?.kind || 'other';
+
+  return Object.prototype.hasOwnProperty.call(
+    DOCUMENT_REGISTRY_KIND_LABELS,
+    kind
+  )
+    ? kind
+    : 'other';
+}
+
+
+function getDocumentRegistryAnalysisTitle(
+  fileName
+) {
+  return String(fileName || 'Документ анализа')
+    .replace(/\.[^.]+$/u, '')
+    .trim() || 'Документ анализа';
+}
+
+
+function importDocumentRegistryAnalysisSnapshot(
+  snapshot
+) {
+  if (
+    !snapshot ||
+    !Array.isArray(snapshot.documents)
+  ) {
+    return {
+      imported: 0,
+      updated: 0
+    };
+  }
+
+  const now =
+    snapshot.savedAt ||
+    new Date().toISOString();
+  const activeProjectNodeId =
+    getActiveRegistryProjectNodeId();
+  let imported = 0;
+  let updated = 0;
+  let changed = false;
+
+  snapshot.documents.forEach(function (
+    analysisDocument
+  ) {
+    const sourceAnalysisKey =
+      normalizeDocumentRegistryAnalysisKey(
+        analysisDocument
+      );
+    const kind =
+      getDocumentRegistryAnalysisKind(
+        analysisDocument
+      );
+    const fingerprint =
+      analysisDocument.analysisFingerprint ||
+      [
+        sourceAnalysisKey,
+        analysisDocument.worksCount || 0,
+        analysisDocument.materialsCount || 0,
+        analysisDocument.totalPages || 0,
+        (analysisDocument.unreadablePages || []).join(',')
+      ].join('|');
+    let registryDocument =
+      documentRegistryState.documents.find(
+        function (item) {
+          return item.sourceAnalysisKey === sourceAnalysisKey;
+        }
+      );
+
+    if (!registryDocument) {
+      registryDocument = {
+        documentId:
+          documentRegistryId('document'),
+        logicalTitle:
+          getDocumentRegistryAnalysisTitle(
+            analysisDocument.fileName
+          ),
+        kind,
+        sourceAnalysisKey,
+        relatedDocumentIds: [],
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+        revisions: []
+      };
+
+      documentRegistryState.documents.push(
+        registryDocument
+      );
+      imported += 1;
+      changed = true;
+    }
+
+    const existingRevision =
+      (registryDocument.revisions || []).find(
+        function (revision) {
+          return (
+            revision.sourceType ===
+              'project-intake-analysis' &&
+            revision.analysisFingerprint ===
+              fingerprint
+          );
+        }
+      );
+    const analysisSummary = {
+      documentRole:
+        analysisDocument.documentRole || 'auto',
+      confidence:
+        analysisDocument.confidence || 'low',
+      totalPages:
+        Number(analysisDocument.totalPages) || 0,
+      ocrPagesCount:
+        Array.isArray(analysisDocument.ocrPages)
+          ? analysisDocument.ocrPages.length
+          : 0,
+      unreadablePagesCount:
+        Array.isArray(analysisDocument.unreadablePages)
+          ? analysisDocument.unreadablePages.length
+          : 0,
+      worksCount:
+        Number(analysisDocument.worksCount) || 0,
+      materialsCount:
+        Number(analysisDocument.materialsCount) || 0,
+      qualityStatus:
+        snapshot.qualityStatus || 'review'
+    };
+
+    if (existingRevision) {
+      if (
+        existingRevision.lastAnalyzedAt !== now ||
+        JSON.stringify(existingRevision.analysisSummary) !==
+          JSON.stringify(analysisSummary)
+      ) {
+        existingRevision.lastAnalyzedAt = now;
+        existingRevision.analysisSummary = analysisSummary;
+        registryDocument.updatedAt = now;
+        updated += 1;
+        changed = true;
+      }
+
+      return;
+    }
+
+    const previousRevision =
+      [...(registryDocument.revisions || [])]
+        .sort(function (first, second) {
+          return (
+            new Date(second.receivedAt || 0) -
+            new Date(first.receivedAt || 0)
+          );
+        })[0] || null;
+
+    if (
+      previousRevision &&
+      previousRevision.sourceType ===
+        'project-intake-analysis' &&
+      previousRevision.status !== 'cancelled'
+    ) {
+      previousRevision.status = 'superseded';
+      previousRevision.supersededAt = now;
+    }
+
+    const revisionNumber =
+      (registryDocument.revisions || []).length + 1;
+
+    registryDocument.revisions.push({
+      revisionId:
+        documentRegistryId('revision'),
+      documentId:
+        registryDocument.documentId,
+      changeSetId:
+        null,
+      revisionLabel:
+        'Анализ ' + revisionNumber,
+      relationType:
+        previousRevision
+          ? 'replaces'
+          : 'initial',
+      previousRevisionId:
+        previousRevision?.revisionId || null,
+      projectNodeIds:
+        activeProjectNodeId
+          ? [activeProjectNodeId]
+          : [],
+      fileName:
+        analysisDocument.fileName ||
+        registryDocument.logicalTitle,
+      fileSize:
+        Number(analysisDocument.fileSize) || 0,
+      fileLastModified:
+        Number(analysisDocument.fileLastModified) || 0,
+      sha256:
+        '',
+      receivedAt:
+        now,
+      status:
+        'under-review',
+      notes:
+        'Создано автоматически после анализа комплекта. ' +
+        'Требуется подтверждение инженером.',
+      sourceType:
+        'project-intake-analysis',
+      sourceAnalysisKey,
+      analysisFingerprint:
+        fingerprint,
+      analysisSummary,
+      lastAnalyzedAt:
+        now,
+      requiresEngineerConfirmation:
+        true
+    });
+
+    registryDocument.kind = kind;
+    registryDocument.updatedAt = now;
+    updated += 1;
+    changed = true;
+  });
+
+  if (changed) {
+    saveDocumentRegistryState();
+    renderDocumentRegistry();
+    refreshRegistryExistingDocuments();
+  }
+
+  return {
+    imported,
+    updated,
+    documentsCount:
+      documentRegistryState.documents.length
+  };
+}
+
+
 function getRegistryUploadId(
   documentItem
 ) {
@@ -2423,6 +2686,13 @@ window.BuildMindDocumentRegistry = {
             found
           )
         : null;
+    },
+
+  importAnalysisSnapshot:
+    function (snapshot) {
+      return importDocumentRegistryAnalysisSnapshot(
+        cloneDocumentRegistry(snapshot)
+      );
     },
 
   refreshUploads:
