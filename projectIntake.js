@@ -1,7 +1,7 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE — V1.6
+   BUILDMIND PROJECT INTAKE — V1.9
 
    Первый автоматизированный слой BuildMind:
    - запускает существующие PDF / Excel движки;
@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.8';
+  'project-intake-v1.9';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -1482,6 +1482,54 @@ function mergeProjectIntakeAggregateCandidates(
   return result;
 }
 
+function getProjectIntakeCandidateDocumentNames(
+  candidate
+) {
+  return Array.from(
+    new Set([
+      candidate?.fileName,
+      candidate?.sourceDocument,
+      ...(
+        Array.isArray(candidate?.sourceDocuments)
+          ? candidate.sourceDocuments
+          : []
+      )
+    ].filter(Boolean))
+  );
+}
+
+function countProjectIntakeWorksByDocumentRole(
+  works,
+  documents,
+  role
+) {
+  const files =
+    new Set(
+      (Array.isArray(documents) ? documents : [])
+        .filter(function (documentItem) {
+          return documentItem?.documentRole === role;
+        })
+        .map(function (documentItem) {
+          return documentItem.fileName;
+        })
+        .filter(Boolean)
+    );
+
+  if (files.size === 0) {
+    return 0;
+  }
+
+  return (Array.isArray(works) ? works : [])
+    .filter(function (candidate) {
+      return getProjectIntakeCandidateDocumentNames(
+        candidate
+      ).some(function (fileName) {
+        return files.has(fileName);
+      });
+    })
+    .length;
+}
+
 
 async function analyzeProjectIntakePdf(
   documentItem,
@@ -2319,7 +2367,7 @@ function createProjectIntakeUi() {
     <div class="project-intake-header">
       <div>
         <span class="project-intake-eyebrow">
-          АНАЛИЗ КОМПЛЕКТА · V1.8
+          АНАЛИЗ КОМПЛЕКТА · V1.9
         </span>
 
         <h2>
@@ -2396,7 +2444,7 @@ function createProjectIntakeUi() {
 
       <div>
         <strong id="projectIntakeWorksCount">0</strong>
-        <span>Работы</span>
+        <span>Работы по ВОР</span>
       </div>
 
       <div>
@@ -3466,6 +3514,15 @@ async function runBuildMindProjectIntake() {
     worksCount:
       0,
 
+    allExtractedWorksCount:
+      0,
+
+    workVolumeRowsCount:
+      0,
+
+    scheduleRowsCount:
+      0,
+
     works: [],
 
     materialsCount:
@@ -4133,14 +4190,31 @@ async function runBuildMindProjectIntake() {
           .groupApprovals(result.approvals);
     }
 
-    result.worksCount =
+    result.allExtractedWorksCount =
       result.works.length;
+    result.workVolumeRowsCount =
+      countProjectIntakeWorksByDocumentRole(
+        result.works,
+        result.documents,
+        'work-volume'
+      );
+    result.scheduleRowsCount =
+      countProjectIntakeWorksByDocumentRole(
+        result.works,
+        result.documents,
+        'schedule'
+      );
+    result.worksCount =
+      result.workVolumeRowsCount ||
+      result.scheduleRowsCount ||
+      result.allExtractedWorksCount;
     result.materialsCount =
       result.materials.length;
     result.duplicates = {
       works:
         Math.max(
-          rawWorksCount - result.worksCount,
+          rawWorksCount -
+            result.allExtractedWorksCount,
           0
         ),
       materials:

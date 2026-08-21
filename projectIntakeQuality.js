@@ -1,11 +1,11 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.9
+   BUILDMIND PROJECT INTAKE QUALITY — V1.10
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.9';
+  'project-intake-quality-v1.10';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -1342,9 +1342,22 @@ function groupProjectIntakeQualityApprovals(
             candidate.matchIndex
           ) <= 140;
 
+        // Несколько формулировок одного вопроса в пределах
+        // одного документа — это доказательства одной задачи,
+        // а не отдельные карточки директору. Тип, организация,
+        // намерение и тема должны совпасть полностью.
+        const sameDocumentQuestion =
+          sourceFile &&
+          group.fileName === sourceFile &&
+          group.type === candidate.type &&
+          group.organization === candidate.organization &&
+          group.intent === candidate.intent &&
+          group.topic === topic;
+
         return (
           sameExactMeaning ||
-          sameNearbyOccurrence
+          sameNearbyOccurrence ||
+          sameDocumentQuestion
         );
       });
 
@@ -1377,6 +1390,14 @@ function groupProjectIntakeQualityApprovals(
           }
         ];
 
+      existing.evidenceContexts =
+        Array.from(
+          new Set([
+            ...(existing.evidenceContexts || []),
+            String(candidate.context || '')
+          ].filter(Boolean))
+        );
+
       existing.occurrenceCount += 1;
       return;
     }
@@ -1394,6 +1415,9 @@ function groupProjectIntakeQualityApprovals(
             candidate.pageNumber || null
         }
       ],
+      evidenceContexts: [
+        String(candidate.context || '')
+      ].filter(Boolean),
       pageNumbers: [
         candidate.pageNumber
       ].filter(Boolean),

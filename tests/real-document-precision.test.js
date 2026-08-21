@@ -49,13 +49,25 @@ assert.equal(
   app.includes("tessedit_pageseg_mode: '6'"),
   false
 );
+assert.equal(
+  app.includes('PROJECT_DOCUMENT_OCR_TABLE_DETAIL_SCALE =\n  2.5'),
+  true
+);
+assert.equal(
+  app.includes("assignedRole !== 'auto'"),
+  true
+);
 
 assert.equal(
   intake.includes('mergeProjectIntakeAggregateCandidates'),
   true
 );
 assert.equal(
-  intake.includes('АНАЛИЗ КОМПЛЕКТА · V1.8'),
+  intake.includes('АНАЛИЗ КОМПЛЕКТА · V1.9'),
+  true
+);
+assert.equal(
+  intake.includes('workVolumeRowsCount'),
   true
 );
 assert.equal(

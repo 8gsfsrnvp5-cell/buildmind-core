@@ -2746,6 +2746,20 @@ function normalizeProjectDocumentRole(value) {
   }) ? normalized : 'auto';
 }
 
+function getProjectDocumentRoleLabel(value) {
+  const role =
+    normalizeProjectDocumentRole(value);
+  const option =
+    PROJECT_DOCUMENT_ROLE_OPTIONS.find(
+      function (item) {
+        return item.value === role;
+      }
+    );
+
+  return option?.label ||
+    PROJECT_DOCUMENT_ROLE_OPTIONS[0].label;
+}
+
 function inferProjectDocumentRoleFromFile(file) {
   const fileName =
     String(file?.name || file || '')
@@ -3313,16 +3327,39 @@ if (
       `${result.totalPages} страниц. ` +
       result.pdfType;
 
-    if (
-      result.compositeAnalysis &&
+    const assignedRole =
+      normalizeProjectDocumentRole(
+        documentItem.documentRole
+      );
+    const detectedSections =
       Array.isArray(
         result.compositeAnalysis
-          .meaningfulSections
+          ?.meaningfulSections
       )
+        ? result.compositeAnalysis
+            .meaningfulSections
+        : [];
+    const sections =
+      assignedRole !== 'auto'
+        ? [
+            {
+              kind: assignedRole,
+              label:
+                getProjectDocumentRoleLabel(
+                  assignedRole
+                ),
+              startPage: 1,
+              endPage:
+                Number(result.totalPages) || 1,
+              confidence: 'high'
+            }
+          ]
+        : detectedSections;
+
+    if (
+      assignedRole !== 'auto' ||
+      result.compositeAnalysis
     ) {
-      const sections =
-        result.compositeAnalysis
-          .meaningfulSections;
 
       const sectionsBlock =
         document.createElement('div');
@@ -3334,9 +3371,11 @@ if (
         document.createElement('h5');
 
       sectionsTitle.textContent =
-        result.compositeAnalysis.isComposite
-          ? `Найден составной PDF: ${sections.length} разделов`
-          : `Найдено разделов: ${sections.length}`;
+        assignedRole !== 'auto'
+          ? 'Раздел задан назначением файла'
+          : result.compositeAnalysis?.isComposite
+            ? `Найден составной PDF: ${sections.length} разделов`
+            : `Найдено разделов: ${sections.length}`;
 
       sectionsBlock.appendChild(
         sectionsTitle
@@ -3499,9 +3538,25 @@ if (
   documentItem.analysis
     .documentClassification
 ) {
+  const assignedClassificationRole =
+    normalizeProjectDocumentRole(
+      documentItem.documentRole
+    );
+  const hasAssignedClassification =
+    assignedClassificationRole !== 'auto';
   const classification =
-    documentItem.analysis
-      .documentClassification;
+    hasAssignedClassification
+      ? {
+          label:
+            getProjectDocumentRoleLabel(
+              assignedClassificationRole
+            ),
+          confidence: 'Высокая',
+          sourcePages: [],
+          matchedKeywords: []
+        }
+      : documentItem.analysis
+          .documentClassification;
 
   const classificationBlock =
     document.createElement('div');
@@ -3513,7 +3568,11 @@ if (
     document.createElement('strong');
 
   classificationTitle.textContent =
-    'Предполагаемый тип: ' +
+    (
+      hasAssignedClassification
+        ? 'Назначенный тип: '
+        : 'Предполагаемый тип: '
+    ) +
     classification.label;
 
   classificationBlock.appendChild(
@@ -3532,6 +3591,7 @@ if (
   );
 
   if (
+    Array.isArray(classification.sourcePages) &&
     classification.sourcePages.length >
     0
   ) {
@@ -3550,6 +3610,9 @@ if (
   }
 
   if (
+    Array.isArray(
+      classification.matchedKeywords
+    ) &&
     classification
       .matchedKeywords.length > 0
   ) {
@@ -3571,7 +3634,9 @@ if (
     document.createElement('small');
 
   warningText.textContent =
-    'Тип определён автоматически и требует подтверждения инженером.';
+    hasAssignedClassification
+      ? 'Тип задан назначением файла и используется агентом анализа.'
+      : 'Тип определён автоматически и требует подтверждения инженером.';
 
   classificationBlock.appendChild(
     warningText
@@ -5343,6 +5408,12 @@ const PROJECT_DOCUMENT_OCR_FAST_SCALE =
 const PROJECT_DOCUMENT_OCR_DETAIL_SCALE =
   1.65;
 
+// Отдельные ВОР/ГПР являются плотными многостолбцовыми
+// сканами. Масштаб 1.65 (~119 DPI) теряет единицы, коды и
+// одну из дат. 2.5 соответствует проверенному проходу 180 DPI.
+const PROJECT_DOCUMENT_OCR_TABLE_DETAIL_SCALE =
+  2.5;
+
 const PROJECT_DOCUMENT_OCR_PRIORITY_HEAD_PAGES =
   3;
 
@@ -6210,7 +6281,16 @@ async function inspectPdfDocument(
             timeoutMs,
             scale:
               mode === 'detail'
-                ? PROJECT_DOCUMENT_OCR_DETAIL_SCALE
+                ? (
+                    [
+                      'work-volume',
+                      'schedule'
+                    ].includes(
+                      String(options.documentRole || '')
+                    )
+                      ? PROJECT_DOCUMENT_OCR_TABLE_DETAIL_SCALE
+                      : PROJECT_DOCUMENT_OCR_DETAIL_SCALE
+                  )
                 : PROJECT_DOCUMENT_OCR_FAST_SCALE,
             includeLayout:
               mode === 'detail',
