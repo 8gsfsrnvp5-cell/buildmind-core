@@ -42,6 +42,15 @@ const workVolume = fs.readFileSync(
 });
 
 assert.equal(
+  app.includes("tessedit_pageseg_mode: '3'"),
+  true
+);
+assert.equal(
+  app.includes("tessedit_pageseg_mode: '6'"),
+  false
+);
+
+assert.equal(
   intake.includes('mergeProjectIntakeAggregateCandidates'),
   true
 );
@@ -213,6 +222,10 @@ assert.equal(
   structuredVolume.works[0].quantity,
   16
 );
+assert.equal(
+  structuredVolume.works[0].workCode,
+  '3.1.1'
+);
 
 const structuredSchedule = table.analyzePages(
   [
@@ -257,6 +270,97 @@ assert.equal(
 assert.equal(
   structuredSchedule.works[0].quantity,
   13
+);
+assert.equal(
+  structuredSchedule.works[0].workCode,
+  '3.1.1'
+);
+
+const inheritedScheduleDate = table.analyzePages(
+  [
+    {
+      pageNumber: 1,
+      layoutWords: [
+        layoutWord('23', 12, 100),
+        layoutWord('Магистральная', 120, 100),
+        layoutWord('линия', 240, 100),
+        layoutWord('20.09.2024', 730, 100),
+        layoutWord('26.08.2025', 860, 100),
+        layoutWord('23.1.1', 12, 130),
+        layoutWord('Разработка', 120, 130),
+        layoutWord('грунта', 240, 130),
+        layoutWord('M3', 555, 130),
+        layoutWord('1', 590, 130),
+        layoutWord('023,68', 655, 130),
+        layoutWord('17.05.2025', 860, 130)
+      ]
+    }
+  ],
+  [
+    {
+      id: 'gpr-parent-range',
+      kind: 'schedule',
+      pageNumbers: [1]
+    }
+  ],
+  {
+    sourceDocument: 'ГПР 111.pdf'
+  }
+);
+
+assert.equal(inheritedScheduleDate.works.length, 1);
+assert.equal(
+  inheritedScheduleDate.works[0].workCode,
+  '23.1.1'
+);
+assert.equal(
+  inheritedScheduleDate.works[0].quantity,
+  1023.68
+);
+assert.equal(
+  inheritedScheduleDate.works[0].unit,
+  'м³'
+);
+assert.equal(
+  inheritedScheduleDate.works[0].startDate,
+  '2024-09-20'
+);
+assert.equal(
+  inheritedScheduleDate.works[0].finishDate,
+  '2025-05-17'
+);
+
+const inferredScheduleUnit = table.analyzePages(
+  [
+    {
+      pageNumber: 1,
+      layoutWords: [
+        layoutWord('21.10', 12, 100),
+        layoutWord('Перевозка', 120, 100),
+        layoutWord('мусора', 240, 100),
+        layoutWord('4,22', 655, 100),
+        layoutWord('20.02.2025', 730, 100),
+        layoutWord('11.03.2025', 860, 100)
+      ]
+    }
+  ],
+  [
+    {
+      id: 'gpr-unit-inference',
+      kind: 'schedule',
+      pageNumbers: [1]
+    }
+  ],
+  {
+    sourceDocument: 'ГПР 111.pdf'
+  }
+);
+
+assert.equal(inferredScheduleUnit.works.length, 1);
+assert.equal(inferredScheduleUnit.works[0].unit, 'т');
+assert.equal(
+  inferredScheduleUnit.works[0].unitInferredFromWorkName,
+  true
 );
 
 const supplyScheduleQuality =

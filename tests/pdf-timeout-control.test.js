@@ -45,7 +45,7 @@ const index =
 
 assert.equal(
   index.includes(
-    'app.js?v=13'
+    'app.js?v=16'
   ),
   true
 );

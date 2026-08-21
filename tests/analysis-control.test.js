@@ -117,7 +117,7 @@ assert.equal(
 
 assert.equal(
   index.includes(
-    'pdfTableEngine.js?v=2'
+    'pdfTableEngine.js?v=5'
   ),
   true,
   'Перед Project Intake должен подключаться анализатор PDF-таблиц.'

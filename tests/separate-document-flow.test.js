@@ -15,7 +15,8 @@ const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 
 [
   'document-role-select',
-  "documentRole: 'auto'",
+  'inferProjectDocumentRoleFromFile(file)',
+  'documentRoleSource:',
   'getProjectDocumentRoleOptions',
   'ocr-detail-plan'
 ].forEach(function (marker) {
