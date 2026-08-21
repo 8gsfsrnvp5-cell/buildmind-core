@@ -15,7 +15,7 @@
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_VERSION =
-  'project-intake-v1.6';
+  'project-intake-v1.7';
 
 const PROJECT_INTAKE_KIND_LABELS = {
   composite:
@@ -47,6 +47,16 @@ const PROJECT_INTAKE_KIND_LABELS = {
 
   other:
     'Тип документа требует проверки'
+};
+
+const PROJECT_INTAKE_DOCUMENT_ROLE_LABELS = {
+  auto: 'Автоопределение',
+  agreement: 'Договор',
+  'project-documentation': 'Проектная документация',
+  'work-volume': 'ВОР — ведомость объёмов работ',
+  schedule: 'ГПР — график производства работ',
+  specification: 'Спецификация / материалы',
+  other: 'Другой документ'
 };
 
 const PROJECT_INTAKE_CONFIDENCE_LABELS = {
@@ -271,6 +281,79 @@ function getProjectIntakeExtension(
         .pop()
         .toLowerCase()
     : '';
+}
+
+function getProjectIntakeDocumentRole(documentItem, options = {}) {
+  const requestedRole = String(
+    options.documentRole || documentItem?.documentRole || 'auto'
+  );
+
+  return Object.prototype.hasOwnProperty.call(
+    PROJECT_INTAKE_DOCUMENT_ROLE_LABELS,
+    requestedRole
+  ) ? requestedRole : 'auto';
+}
+
+function getProjectIntakeDocumentRoleLabel(role) {
+  return PROJECT_INTAKE_DOCUMENT_ROLE_LABELS[role] ||
+    PROJECT_INTAKE_DOCUMENT_ROLE_LABELS.auto;
+}
+
+function getProjectIntakeExplicitPageNumbers(documentItem) {
+  return (Array.isArray(documentItem?.analysis?.extractedPages)
+    ? documentItem.analysis.extractedPages
+    : [])
+    .map(function (page) { return Number(page?.pageNumber); })
+    .filter(function (pageNumber) {
+      return Number.isInteger(pageNumber) && pageNumber > 0;
+    });
+}
+
+function createProjectIntakeExplicitSection(documentItem, role) {
+  if (
+    role === 'auto' ||
+    !Object.prototype.hasOwnProperty.call(
+      PROJECT_INTAKE_KIND_LABELS,
+      role
+    )
+  ) {
+    return null;
+  }
+
+  const pageNumbers = getProjectIntakeExplicitPageNumbers(documentItem);
+
+  return {
+    id: 'user-role-' + role,
+    kind: role,
+    label: getProjectIntakeDocumentRoleLabel(role),
+    confidence: 'high',
+    source: 'Назначение файла выбрано пользователем',
+    pageNumbers,
+    anchorPages: pageNumbers.slice(0, 3),
+    startPage: pageNumbers[0] || null,
+    endPage: pageNumbers[pageNumbers.length - 1] || null,
+    userAssigned: true
+  };
+}
+
+function applyProjectIntakeDocumentRole(classification, documentItem, options = {}) {
+  const role = getProjectIntakeDocumentRole(documentItem, options);
+
+  if (role === 'auto') {
+    return classification;
+  }
+
+  return {
+    kind: role,
+    confidence: 'high',
+    source: 'Назначение файла выбрано пользователем',
+    requestedRole: role,
+    requestedRoleLabel: getProjectIntakeDocumentRoleLabel(role),
+    detectedKind: classification?.kind || 'other',
+    classificationConflict: Boolean(
+      classification?.kind && classification.kind !== role
+    )
+  };
 }
 
 function getProjectIntakePdfText(
@@ -561,6 +644,15 @@ function mapExistingPdfClassification(
 function classifyProjectIntakePdf(
   documentItem
 ) {
+  const requestedRole = getProjectIntakeDocumentRole(documentItem);
+
+  if (requestedRole !== 'auto') {
+    return applyProjectIntakeDocumentRole(
+      { kind: requestedRole, confidence: 'high' },
+      documentItem
+    );
+  }
+
   const compositeAnalysis =
     documentItem
       ?.analysis
@@ -688,6 +780,15 @@ function classifyProjectIntakeTable(
   documentItem,
   analysis
 ) {
+  const requestedRole = getProjectIntakeDocumentRole(documentItem);
+
+  if (requestedRole !== 'auto') {
+    return applyProjectIntakeDocumentRole(
+      { kind: requestedRole, confidence: 'high' },
+      documentItem
+    );
+  }
+
   if (
     window.BuildMindProjectIntakeQuality &&
     typeof window
@@ -1276,7 +1377,10 @@ async function analyzeProjectIntakePdf(
       await api
         .analyzePdfDocument(
           documentItem,
-          options
+          {
+            ...options,
+            documentRole: getProjectIntakeDocumentRole(documentItem, options)
+          }
         );
     } else if (
       typeof inspectPdfDocument ===
@@ -1287,9 +1391,11 @@ async function analyzeProjectIntakePdf(
 
       documentItem.analysis =
         await inspectPdfDocument(
-          documentItem
-          ,
-          options
+          documentItem,
+          {
+            ...options,
+            documentRole: getProjectIntakeDocumentRole(documentItem, options)
+          }
         );
 
       documentItem.status =
@@ -1320,6 +1426,26 @@ async function analyzeProjectIntakePdf(
           .meaningfulSections
       : [];
 
+  const requestedRole = getProjectIntakeDocumentRole(
+    documentItem,
+    options
+  );
+
+  const explicitSection = createProjectIntakeExplicitSection(
+    documentItem,
+    requestedRole
+  );
+
+  const resolvedSections = explicitSection
+    ? [explicitSection]
+    : sections;
+
+  const tableSections =
+    explicitSection &&
+    ['work-volume', 'schedule'].includes(requestedRole)
+      ? [explicitSection]
+      : sections;
+
   const pdfTableAnalysis =
     window.BuildMindPdfTable &&
     typeof window
@@ -1331,7 +1457,7 @@ async function analyzeProjectIntakePdf(
             documentItem
               .analysis
               ?.extractedPages || [],
-            sections,
+            tableSections,
             {
               sourceDocument:
                 documentItem.file.name
@@ -1365,7 +1491,7 @@ async function analyzeProjectIntakePdf(
 
     compositeAnalysis,
 
-    sections,
+    sections: resolvedSections,
 
     ocrPages:
       Array.isArray(
@@ -1510,12 +1636,28 @@ async function analyzeProjectIntakeTable(
       ? analysis.candidates
       : [];
 
+  const requestedRole =
+    getProjectIntakeDocumentRole(
+      documentItem
+    );
+
+  const explicitSection =
+    createProjectIntakeExplicitSection(
+      documentItem,
+      requestedRole
+    );
+
   return {
     classification:
       classifyProjectIntakeTable(
         documentItem,
         analysis
       ),
+
+    sections:
+      explicitSection
+        ? [explicitSection]
+        : [],
 
     works:
       candidates.filter(
@@ -1551,6 +1693,24 @@ async function analyzeProjectIntakeTable(
   };
 }
 
+
+async function analyzeProjectIntakeDocument(documentItem, context = {}) {
+  const extension = getProjectIntakeExtension(documentItem);
+  const role = getProjectIntakeDocumentRole(documentItem, context);
+
+  if (extension === 'pdf') {
+    return analyzeProjectIntakePdf(documentItem, {
+      ...context,
+      documentRole: role
+    });
+  }
+
+  if (['xlsx', 'xls', 'csv'].includes(extension)) {
+    return analyzeProjectIntakeTable(documentItem);
+  }
+
+  return createProjectIntakeUnsupportedAnalysis(documentItem);
+}
 
 function createProjectIntakeUnsupportedAnalysis(
   documentItem
@@ -1589,19 +1749,20 @@ function getProjectIntakeAgentOrchestrator() {
 }
 
 function getProjectIntakeAgentTaskType(
-  extension
+  extension,
+  documentItem
 ) {
+  const role = getProjectIntakeDocumentRole(documentItem);
+
+  if (role !== 'auto') {
+    return 'document.' + role;
+  }
+
   if (extension === 'pdf') {
     return 'document.pdf';
   }
 
-  if (
-    [
-      'xlsx',
-      'xls',
-      'csv'
-    ].includes(extension)
-  ) {
+  if (['xlsx', 'xls', 'csv'].includes(extension)) {
     return 'document.spreadsheet';
   }
 
@@ -1683,7 +1844,7 @@ function registerProjectIntakeAgents() {
         documentItem,
         context
       ) {
-        return analyzeProjectIntakePdf(
+        return analyzeProjectIntakeDocument(
           documentItem,
           context
         );
@@ -1702,10 +1863,56 @@ function registerProjectIntakeAgents() {
 
     run:
       function (documentItem) {
-        return analyzeProjectIntakeTable(
-          documentItem
+        return analyzeProjectIntakeDocument(
+          documentItem,
+          {}
         );
       }
+  });
+
+  [
+    {
+      id: 'contract-agent',
+      taskType: 'document.agreement',
+      role: 'agreement',
+      label: 'Агент договора'
+    },
+    {
+      id: 'project-documentation-agent',
+      taskType: 'document.project-documentation',
+      role: 'project-documentation',
+      label: 'Агент проектной документации'
+    },
+    {
+      id: 'work-volume-agent',
+      taskType: 'document.work-volume',
+      role: 'work-volume',
+      label: 'Агент ВОР'
+    },
+    {
+      id: 'schedule-agent',
+      taskType: 'document.schedule',
+      role: 'schedule',
+      label: 'Агент ГПР'
+    },
+    {
+      id: 'specification-agent',
+      taskType: 'document.specification',
+      role: 'specification',
+      label: 'Агент спецификаций'
+    }
+  ].forEach(function (agent) {
+    orchestrator.register({
+      id: agent.id,
+      taskType: agent.taskType,
+      label: agent.label,
+      run: function (documentItem, context) {
+        return analyzeProjectIntakeDocument(documentItem, {
+          ...(context || {}),
+          documentRole: agent.role
+        });
+      }
+    });
   });
 
   orchestrator.register({
@@ -3157,7 +3364,8 @@ async function runBuildMindProjectIntake() {
 
       const agentTaskType =
         getProjectIntakeAgentTaskType(
-          extension
+          extension,
+          documentItem
         );
 
       if (
@@ -3346,6 +3554,9 @@ async function runBuildMindProjectIntake() {
             .name,
 
         extension,
+
+        documentRole:
+          getProjectIntakeDocumentRole(documentItem),
 
         kind:
           classification.kind,
@@ -3775,6 +3986,67 @@ async function runBuildMindProjectIntake() {
 
     const orchestratorForSummary =
       getProjectIntakeAgentOrchestrator();
+
+    const activeWorkContext =
+      window.BuildMindWorkContexts &&
+      typeof window.BuildMindWorkContexts.getActive ===
+        'function'
+        ? window.BuildMindWorkContexts.getActive()
+        : null;
+
+    if (
+      activeWorkContext &&
+      orchestratorForSummary &&
+      typeof orchestratorForSummary.run === 'function'
+    ) {
+      const quantityReport =
+        await orchestratorForSummary.run(
+          'calculation.quantity',
+          {
+            context: activeWorkContext,
+            documents
+          },
+          {
+            signal: analysisController.signal
+          }
+        );
+
+      result.agentReports.push(quantityReport);
+    }
+
+    const agentContracts =
+      window.BuildMindAgentContracts;
+
+    if (
+      agentContracts &&
+      typeof agentContracts.createReport === 'function'
+    ) {
+      result.agentReports.push(
+        agentContracts.createReport({
+          agentId: 'director-agent',
+          taskType: 'project.aggregate',
+          status: 'completed',
+          source: 'local-agent-orchestrator',
+          confidence: 'medium',
+          facts: [
+            'Все загруженные файлы обработаны независимо.',
+            'Сводка собрана главным агентом.'
+          ],
+          evidence: result.documents.map(function (item) {
+            return {
+              fileName: item.fileName,
+              kind: item.kind,
+              sourcePages: item.ocrPages
+            };
+          }),
+          payload: {
+            documentsCount: result.documents.length,
+            worksCount: result.worksCount,
+            materialsCount: result.materialsCount
+          }
+        })
+      );
+    }
 
     result.agentSummary =
       orchestratorForSummary &&

@@ -155,6 +155,18 @@ async function runBuildMindAgent(
     });
   }
 
+  console.info(
+    '[BuildMind agent] start',
+    {
+      agentId: agent.id,
+      taskType,
+      source:
+        input?.file?.name ||
+        input?.documentItem?.file?.name ||
+        null
+    }
+  );
+
   try {
     const payload =
       await agent.run(
@@ -191,6 +203,16 @@ async function runBuildMindAgent(
       startedAt
     });
   } catch (error) {
+    console.warn(
+      '[BuildMind agent] failed',
+      {
+        agentId: agent.id,
+        taskType,
+        error:
+          String(error && error.message || error)
+      }
+    );
+
     const cancelled =
       error &&
       (
