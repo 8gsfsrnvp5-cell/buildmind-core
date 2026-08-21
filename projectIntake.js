@@ -2590,7 +2590,7 @@ function renderProjectIntake(
             `${intakeT(
               'intake.ready'
             )} ` +
-            'Анализ запустится автоматически.'
+            'Нажмите «Анализировать сейчас».'
           )
         : intakeT(
             'intake.empty'

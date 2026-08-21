@@ -3022,6 +3022,11 @@ function renderProjectDocuments() {
       'clearDocumentsBtn'
     );
 
+  const analyzeUploadedDocumentsButton =
+    document.getElementById(
+      'analyzeUploadedDocumentsBtn'
+    );
+
   const selectButton =
     document.getElementById(
       'selectDocumentsBtn'
@@ -3052,6 +3057,12 @@ function renderProjectDocuments() {
     projectDocumentsAnalysisBusy ||
     uploadedProjectDocuments.length === 0;
 
+  if (analyzeUploadedDocumentsButton) {
+    analyzeUploadedDocumentsButton.disabled =
+      projectDocumentsAnalysisBusy ||
+      uploadedProjectDocuments.length === 0;
+  }
+
   if (selectButton) {
     selectButton.disabled =
       projectDocumentsAnalysisBusy;
@@ -3072,7 +3083,9 @@ function renderProjectDocuments() {
   }
 
   message.textContent =
-    'Документы подготовлены к последующему анализу.';
+    projectDocumentsAnalysisBusy
+      ? 'BuildMind анализирует документы…'
+      : 'Документы готовы. Нажмите «Анализировать сейчас».';
 
   uploadedProjectDocuments.forEach(
     function (documentItem) {
@@ -4028,6 +4041,11 @@ function initializeProjectDocuments() {
       'clearDocumentsBtn'
     );
 
+  const analyzeUploadedDocumentsButton =
+    document.getElementById(
+      'analyzeUploadedDocumentsBtn'
+    );
+
   const dropZone =
     document.getElementById(
       'documentsDropZone'
@@ -4090,6 +4108,36 @@ function initializeProjectDocuments() {
     );
   }
 );
+
+  if (analyzeUploadedDocumentsButton) {
+    analyzeUploadedDocumentsButton.addEventListener(
+      'click',
+      function () {
+        if (projectDocumentsAnalysisBusy) {
+          return;
+        }
+
+        if (
+          window.BuildMindProjectIntake &&
+          typeof window.BuildMindProjectIntake.run ===
+            'function'
+        ) {
+          window.BuildMindProjectIntake.run();
+          return;
+        }
+
+        const message =
+          document.getElementById(
+            'documentsMessage'
+          );
+
+        if (message) {
+          message.textContent =
+            'Блок анализа ещё загружается. Повторите через секунду.';
+        }
+      }
+    );
+  }
 
   list.addEventListener(
     'click',
