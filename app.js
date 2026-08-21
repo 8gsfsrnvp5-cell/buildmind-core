@@ -6217,7 +6217,7 @@ async function inspectPdfDocument(
             tesseractOptions:
               mode === 'detail'
                 ? {
-                    tessedit_pageseg_mode: '6',
+                    tessedit_pageseg_mode: '3',
                     preserve_interword_spaces: '1'
                   }
                 : {},
