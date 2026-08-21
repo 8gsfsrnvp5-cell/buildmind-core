@@ -1551,6 +1551,232 @@ async function analyzeProjectIntakeTable(
   };
 }
 
+
+function createProjectIntakeUnsupportedAnalysis(
+  documentItem
+) {
+  return {
+    classification: {
+      kind:
+        'other',
+
+      confidence:
+        'low',
+
+      source:
+        'Формат пока не поддерживается'
+    },
+
+    works: [],
+
+    materials: [],
+
+    uncertain: [],
+
+    approvals: [],
+
+    sourceDocument:
+      documentItem?.file?.name ||
+      ''
+  };
+}
+
+function getProjectIntakeAgentOrchestrator() {
+  return (
+    window.BuildMindAgentOrchestrator ||
+    null
+  );
+}
+
+function getProjectIntakeAgentTaskType(
+  extension
+) {
+  if (extension === 'pdf') {
+    return 'document.pdf';
+  }
+
+  if (
+    [
+      'xlsx',
+      'xls',
+      'csv'
+    ].includes(extension)
+  ) {
+    return 'document.spreadsheet';
+  }
+
+  return 'document.other';
+}
+
+function createProjectIntakeAgentTrace(
+  report
+) {
+  if (
+    !report ||
+    typeof report !== 'object'
+  ) {
+    return null;
+  }
+
+  return {
+    schemaVersion:
+      report.schemaVersion ||
+      null,
+
+    reportId:
+      report.reportId ||
+      null,
+
+    agentId:
+      report.agentId ||
+      'unknown-agent',
+
+    taskType:
+      report.taskType ||
+      'unknown',
+
+    status:
+      report.status ||
+      'failed',
+
+    confidence:
+      report.confidence ||
+      'low',
+
+    durationMs:
+      Number(report.durationMs) || 0,
+
+    errorCode:
+      report.errorCode ||
+      null,
+
+    errorMessage:
+      report.errorMessage ||
+      null
+  };
+}
+
+function registerProjectIntakeAgents() {
+  const orchestrator =
+    getProjectIntakeAgentOrchestrator();
+
+  if (
+    !orchestrator ||
+    typeof orchestrator.register !==
+      'function'
+  ) {
+    return;
+  }
+
+  orchestrator.register({
+    id:
+      'pdf-ocr-agent',
+
+    taskType:
+      'document.pdf',
+
+    label:
+      'Агент PDF/OCR',
+
+    run:
+      function (
+        documentItem,
+        context
+      ) {
+        return analyzeProjectIntakePdf(
+          documentItem,
+          context
+        );
+      }
+  });
+
+  orchestrator.register({
+    id:
+      'spreadsheet-agent',
+
+    taskType:
+      'document.spreadsheet',
+
+    label:
+      'Агент Excel/таблиц',
+
+    run:
+      function (documentItem) {
+        return analyzeProjectIntakeTable(
+          documentItem
+        );
+      }
+  });
+
+  orchestrator.register({
+    id:
+      'unsupported-file-agent',
+
+    taskType:
+      'document.other',
+
+    label:
+      'Агент других форматов',
+
+    run:
+      function (documentItem) {
+        return createProjectIntakeUnsupportedAnalysis(
+          documentItem
+        );
+      }
+  });
+
+  orchestrator.register({
+    id:
+      'materials-agent',
+
+    taskType:
+      'materials.extract',
+
+    label:
+      'Агент материалов',
+
+    run:
+      function (input) {
+        const analyzed =
+          input?.analyzed || {};
+
+        const sourceDocument =
+          input?.documentItem?.file?.name ||
+          '';
+
+        const materials =
+          Array.isArray(
+            analyzed.materials
+          )
+            ? analyzed.materials
+                .map(
+                  function (candidate) {
+                    return {
+                      ...candidate,
+
+                      agentSource:
+                        sourceDocument
+                    };
+                  }
+                )
+            : [];
+
+        return {
+          materials,
+
+          materialCount:
+            materials.length,
+
+          sourceDocument,
+
+          requiresEngineerConfirmation:
+            true
+        };
+      }
+  });
+}
+
 function getProjectIntakeScheduleReviewItems(
   candidates,
   fileName
@@ -2808,7 +3034,13 @@ async function runBuildMindProjectIntake() {
       [],
 
     reviewItems:
-      []
+      [],
+
+    agentReports:
+      [],
+
+    agentSummary:
+      null
   };
 
   try {
@@ -2845,7 +3077,121 @@ async function runBuildMindProjectIntake() {
 
       let analyzed;
 
+      const documentAgentReports =
+        [];
+
+      const orchestrator =
+        getProjectIntakeAgentOrchestrator();
+
+      const agentTaskType =
+        getProjectIntakeAgentTaskType(
+          extension
+        );
+
       if (
+        orchestrator &&
+        typeof orchestrator.run ===
+          'function'
+      ) {
+        const primaryAgentReport =
+          await orchestrator.run(
+            agentTaskType,
+            documentItem,
+            {
+              signal:
+                analysisController.signal
+            }
+          );
+
+        documentAgentReports.push(
+          primaryAgentReport
+        );
+
+        analyzed =
+          (
+            primaryAgentReport &&
+            [
+              'completed',
+              'partial'
+            ].includes(
+              primaryAgentReport.status
+            ) &&
+            primaryAgentReport.payload &&
+            typeof primaryAgentReport.payload ===
+              'object'
+          )
+            ? primaryAgentReport.payload
+            : {
+                ...createProjectIntakeUnsupportedAnalysis(
+                  documentItem
+                ),
+
+                agentErrorCode:
+                  primaryAgentReport?.errorCode ||
+                  'AGENT_EXECUTION_FAILED',
+
+                agentErrorMessage:
+                  primaryAgentReport?.errorMessage ||
+                  'Специализированный агент не вернул результат.'
+              };
+
+        if (
+          primaryAgentReport &&
+          primaryAgentReport.status ===
+            'cancelled'
+        ) {
+          throwIfProjectIntakeCancelled(
+            analysisController.signal
+          );
+        }
+
+        if (
+          primaryAgentReport &&
+          [
+            'completed',
+            'partial'
+          ].includes(
+            primaryAgentReport.status
+          )
+        ) {
+          const materialsAgentReport =
+            await orchestrator.run(
+              'materials.extract',
+              {
+                documentItem,
+
+                analyzed
+              },
+              {
+                signal:
+                  analysisController.signal
+              }
+            );
+
+          documentAgentReports.push(
+            materialsAgentReport
+          );
+
+          if (
+            materialsAgentReport &&
+            materialsAgentReport.status ===
+              'completed' &&
+            materialsAgentReport.payload &&
+            Array.isArray(
+              materialsAgentReport.payload.materials
+            )
+          ) {
+            analyzed = {
+              ...analyzed,
+
+              materials:
+                materialsAgentReport
+                  .payload
+                  .materials
+            };
+          }
+        }
+      } else if (
         extension ===
         'pdf'
       ) {
@@ -2871,31 +3217,23 @@ async function runBuildMindProjectIntake() {
             documentItem
           );
       } else {
-        analyzed = {
-          classification: {
-            kind:
-              'other',
-
-            confidence:
-              'low',
-
-            source:
-              'Формат пока не поддерживается'
-          },
-
-          works:
-            [],
-
-          materials:
-            [],
-
-          uncertain:
-            [],
-
-          approvals:
-            []
-        };
+        analyzed =
+          createProjectIntakeUnsupportedAnalysis(
+            documentItem
+          );
       }
+
+      const agentTraces =
+        documentAgentReports
+          .map(
+            createProjectIntakeAgentTrace
+          )
+          .filter(
+            Boolean
+          );
+
+      documentItem.agentReports =
+        agentTraces;
 
       throwIfProjectIntakeCancelled(
         analysisController.signal
@@ -3011,6 +3349,24 @@ async function runBuildMindProjectIntake() {
         pdfTableAnalysis:
           analyzed.pdfTableAnalysis || null,
 
+        agentReports:
+          Array.isArray(
+            documentItem.agentReports
+          )
+            ? documentItem.agentReports
+            : [],
+
+        agentIds:
+          Array.isArray(
+            documentItem.agentReports
+          )
+            ? documentItem.agentReports.map(
+                function (report) {
+                  return report.agentId;
+                }
+              )
+            : [],
+
         requiresReview:
           classification
             .confidence !==
@@ -3027,6 +3383,16 @@ async function runBuildMindProjectIntake() {
         .push(
           documentResult
         );
+
+      result.agentReports.push(
+        ...(
+          Array.isArray(
+            documentItem.agentReports
+          )
+            ? documentItem.agentReports
+            : []
+        )
+      );
 
       result.sectionsCount +=
         sections.length;
@@ -3334,6 +3700,18 @@ async function runBuildMindProjectIntake() {
           }
         );
     }
+
+    const orchestratorForSummary =
+      getProjectIntakeAgentOrchestrator();
+
+    result.agentSummary =
+      orchestratorForSummary &&
+      typeof orchestratorForSummary.aggregate ===
+        'function'
+        ? orchestratorForSummary.aggregate(
+            result.agentReports
+          )
+        : null;
 
     const qualityEvaluation =
       window.BuildMindProjectIntakeQuality &&
@@ -3725,6 +4103,8 @@ window.BuildMindProjectIntake = {
       return projectIntakeLastResult;
     }
 };
+
+registerProjectIntakeAgents();
 
 initializeBuildMindProjectIntake();
 
