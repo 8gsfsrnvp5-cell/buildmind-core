@@ -58,6 +58,59 @@ assert.equal(
   true
 );
 
+const workVolumeSandbox = {
+  window: {},
+  console: {
+    info: function () {}
+  }
+};
+
+vm.runInNewContext(
+  workVolume,
+  workVolumeSandbox
+);
+
+const supplySchedule =
+  workVolumeSandbox.window
+    .BuildMindWorkVolume
+    .analyzeRows(
+      [
+        [
+          'Наименование работ',
+          'Ед. изм.',
+          'Объем',
+          'Дата начала',
+          'Дата окончания'
+        ],
+        [
+          'Кабель силовой',
+          'м',
+          '120',
+          '2024-09-09',
+          '2025-09-04'
+        ]
+      ],
+      {
+        sourceDocument:
+          'ГПР ЮВХ от 11.08.2025.xlsx',
+        sourceSheet:
+          'График поставок МТР'
+      }
+    );
+
+assert.equal(
+  supplySchedule.candidates[0].rowType,
+  'material'
+);
+assert.equal(
+  supplySchedule.candidates[0].sourceType,
+  'supply-schedule'
+);
+assert.equal(
+  supplySchedule.candidates[0].scheduleReviewRequired,
+  false
+);
+
 const corrected = table.normalizeScheduleYears(
   [
     {
