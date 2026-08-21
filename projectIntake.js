@@ -1636,12 +1636,28 @@ async function analyzeProjectIntakeTable(
       ? analysis.candidates
       : [];
 
+  const requestedRole =
+    getProjectIntakeDocumentRole(
+      documentItem
+    );
+
+  const explicitSection =
+    createProjectIntakeExplicitSection(
+      documentItem,
+      requestedRole
+    );
+
   return {
     classification:
       classifyProjectIntakeTable(
         documentItem,
         analysis
       ),
+
+    sections:
+      explicitSection
+        ? [explicitSection]
+        : [],
 
     works:
       candidates.filter(
