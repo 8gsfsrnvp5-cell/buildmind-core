@@ -3523,6 +3523,12 @@ async function runBuildMindProjectIntake() {
     scheduleRowsCount:
       0,
 
+    rawWorkVolumeRowsCount:
+      0,
+
+    rawScheduleRowsCount:
+      0,
+
     works: [],
 
     materialsCount:
@@ -4166,6 +4172,23 @@ async function runBuildMindProjectIntake() {
       result.materials.length;
     const rawApprovalsCount =
       result.approvals.length;
+    const rawWorkVolumeRowsCount =
+      countProjectIntakeWorksByDocumentRole(
+        result.works,
+        result.documents,
+        'work-volume'
+      );
+    const rawScheduleRowsCount =
+      countProjectIntakeWorksByDocumentRole(
+        result.works,
+        result.documents,
+        'schedule'
+      );
+
+    result.rawWorkVolumeRowsCount =
+      rawWorkVolumeRowsCount;
+    result.rawScheduleRowsCount =
+      rawScheduleRowsCount;
 
     result.works =
       mergeProjectIntakeAggregateCandidates(

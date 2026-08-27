@@ -220,6 +220,16 @@ function selectWorkContext(
     String(normalizedSafetyDays)
   );
 
+  setInputValue(
+    'activeContextSafetyDaysInput',
+    String(normalizedSafetyDays)
+  );
+
+  setElementText(
+    'activeContextSafetyMessage',
+    'Запас вычитается из даты начала работы при расчёте даты потребности.'
+  );
+
   if (
     typeof window.render ===
     'function'
@@ -301,6 +311,16 @@ function clearCurrentWorkContext() {
     'safetyDays',
     '0'
   );
+
+  setInputValue(
+    'activeContextSafetyDaysInput',
+    '2'
+  );
+
+  setElementText(
+    'activeContextSafetyMessage',
+    'Сначала выберите рабочий контекст.'
+  );
 }
 
 function renderWorkContexts() {
@@ -358,10 +378,49 @@ function renderWorkContexts() {
       selectButton.className =
         'context-select';
 
-      selectButton.textContent =
+      const contextLabel =
+        document.createElement(
+          'strong'
+        );
+
+      contextLabel.textContent =
         `${context.project} / ` +
         `${context.object} / ` +
         `${context.work}`;
+
+      const contextMeta =
+        document.createElement(
+          'small'
+        );
+
+      contextMeta.textContent =
+        `${context.startDate || '—'} — ` +
+        `${context.endDate || '—'}` +
+        (
+          context.sourceType ===
+            'analysis-gpr'
+            ? ' · из ГПР' +
+              (
+                context.requiresReview
+                  ? ' · проверить'
+                  : ''
+              ) +
+              (
+                context.riskEligible ===
+                  false
+                  ? ' · не участвует в риске'
+                  : ''
+              )
+            : ''
+        );
+
+      selectButton.appendChild(
+        contextLabel
+      );
+
+      selectButton.appendChild(
+        contextMeta
+      );
 
       selectButton.addEventListener(
         'click',
@@ -690,6 +749,521 @@ function addWorkContext() {
   );
 }
 
+
+function updateWorkContextSafetyDays(
+  contextId,
+  value
+) {
+  const context =
+    workContexts.find(
+      function (item) {
+        return item.id === contextId;
+      }
+    );
+  const safetyDays =
+    Number(value);
+
+  if (!context) {
+    return {
+      success: false,
+      reason:
+        'context-not-found'
+    };
+  }
+
+  if (
+    !Number.isFinite(safetyDays) ||
+    safetyDays < 0
+  ) {
+    return {
+      success: false,
+      reason:
+        'invalid-safety-days'
+    };
+  }
+
+  if (
+    Number(context.safetyDays || 0) ===
+    safetyDays
+  ) {
+    return {
+      success: true,
+      reason: 'no-changes',
+      context: {
+        ...context
+      }
+    };
+  }
+
+  context.safetyDays =
+    safetyDays;
+  context.safetyDaysSource =
+    'manual';
+  context.updatedAt =
+    new Date().toISOString();
+
+  saveWorkContexts();
+
+  if (context.id === activeContextId) {
+    selectWorkContextById(
+      context.id
+    );
+  } else {
+    renderWorkContexts();
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(
+      'buildmind:work-contexts-changed',
+      {
+        detail: {
+          action:
+            'safety-days-updated',
+          contextId:
+            context.id,
+          safetyDays
+        }
+      }
+    )
+  );
+
+  return {
+    success: true,
+    reason: 'updated',
+    context: {
+      ...context
+    }
+  };
+}
+
+
+function saveActiveContextSafetyDays() {
+  const input =
+    document.getElementById(
+      'activeContextSafetyDaysInput'
+    );
+  const message =
+    document.getElementById(
+      'activeContextSafetyMessage'
+    );
+
+  if (!activeContextId) {
+    if (message) {
+      message.textContent =
+        'Сначала выберите рабочий контекст.';
+    }
+    return;
+  }
+
+  const result =
+    updateWorkContextSafetyDays(
+      activeContextId,
+      input?.value
+    );
+
+  if (message) {
+    message.textContent =
+      result.success
+        ? 'Страховой запас сохранён и учтён в расчёте риска.'
+        : 'Введите число дней не меньше нуля.';
+  }
+}
+
+
+function normalizeAnalysisContextValue(
+  value
+) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9]+/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+function analysisContextHash(value) {
+  const source = String(value || '');
+  let hash = 2166136261;
+
+  for (
+    let index = 0;
+    index < source.length;
+    index += 1
+  ) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0)
+    .toString(16)
+    .padStart(8, '0');
+}
+
+
+function importWorkContextsFromAnalysis(
+  snapshot,
+  options = {}
+) {
+  const project =
+    String(options.project || '')
+      .trim();
+  const object =
+    String(options.object || '')
+      .trim();
+  const defaultSafetyDays =
+    Number.isFinite(
+      Number(options.safetyDays)
+    )
+      ? Math.max(
+          Number(options.safetyDays),
+          0
+        )
+      : 2;
+
+  if (!project || !object) {
+    return {
+      success: false,
+      reason: 'missing-project-context',
+      added: 0,
+      updated: 0,
+      skipped: 0,
+      invalid: 0,
+      reviewSkipped: 0,
+      totalRows: 0
+    };
+  }
+
+  const rows =
+    Array.isArray(snapshot?.combinedRows)
+      ? snapshot.combinedRows
+      : Array.isArray(snapshot?.scheduleRows)
+        ? snapshot.scheduleRows
+        : [];
+
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  let invalid = 0;
+  let reviewSkipped = 0;
+  const addedIds = [];
+
+  rows.forEach(
+    function (row) {
+      const work =
+        String(
+          row?.workName ||
+          row?.name ||
+          ''
+        ).trim();
+      const startDate =
+        String(row?.startDate || '')
+          .trim();
+      const endDate =
+        String(
+          row?.finishDate ||
+          row?.endDate ||
+          ''
+        ).trim();
+      const reviewReasons =
+        Array.isArray(row?.reviewReasons)
+          ? row.reviewReasons
+          : [];
+      const requiresDateReview =
+        Boolean(row?.requiresReview) &&
+        (
+          reviewReasons.length === 0 ||
+          reviewReasons.some(
+            function (reason) {
+              return /дат|год|начал|оконч|срок/iu
+                .test(
+                  String(reason || '')
+                );
+            }
+          )
+        );
+
+      const contextKey = [
+        project,
+        object,
+        work
+      ]
+        .map(
+          normalizeAnalysisContextValue
+        )
+        .join('|');
+
+      const existing =
+        work
+          ? workContexts.find(
+              function (context) {
+                return [
+                  context.project,
+                  context.object,
+                  context.work
+                ]
+                  .map(
+                    normalizeAnalysisContextValue
+                  )
+                  .join('|') ===
+                    contextKey;
+              }
+            )
+          : null;
+
+      if (requiresDateReview) {
+        if (
+          existing?.sourceType ===
+          'analysis-gpr'
+        ) {
+          const sameReasons =
+            JSON.stringify(
+              existing.reviewReasons || []
+            ) ===
+            JSON.stringify(reviewReasons);
+
+          if (
+            existing.riskEligible !==
+              false ||
+            existing.requiresReview !==
+              true ||
+            !sameReasons
+          ) {
+            existing.riskEligible =
+              false;
+            existing.requiresReview =
+              true;
+            existing.reviewReasons =
+              [...reviewReasons];
+            existing.updatedAt =
+              new Date().toISOString();
+            updated += 1;
+          } else {
+            skipped += 1;
+          }
+        }
+
+        reviewSkipped += 1;
+        return;
+      }
+
+      if (
+        !work ||
+        !startDate ||
+        !endDate ||
+        endDate < startDate
+      ) {
+        if (
+          existing?.sourceType ===
+          'analysis-gpr'
+        ) {
+          const invalidReason =
+            'В новой редакции ГПР нет корректного диапазона дат.';
+          const alreadyBlocked =
+            existing.riskEligible ===
+              false &&
+            existing.requiresReview ===
+              true &&
+            existing.reviewReasons?.[0] ===
+              invalidReason;
+
+          if (!alreadyBlocked) {
+            existing.riskEligible =
+              false;
+            existing.requiresReview =
+              true;
+            existing.reviewReasons = [
+              invalidReason
+            ];
+            existing.updatedAt =
+              new Date().toISOString();
+            updated += 1;
+          } else {
+            skipped += 1;
+          }
+        }
+
+        invalid += 1;
+        return;
+      }
+
+      if (existing) {
+        if (
+          existing.sourceType ===
+            'analysis-gpr' &&
+          (
+            existing.startDate !==
+              startDate ||
+            existing.endDate !==
+              endDate ||
+            existing.requiresReview !==
+              Boolean(row.requiresReview) ||
+            existing.riskEligible !==
+              true
+          )
+        ) {
+          existing.startDate =
+            startDate;
+          existing.endDate =
+            endDate;
+          existing.requiresReview =
+            Boolean(row.requiresReview);
+          existing.riskEligible =
+            true;
+          existing.reviewReasons =
+            Array.isArray(
+              row.reviewReasons
+            )
+              ? [...row.reviewReasons]
+              : [];
+          existing.sourceDocuments =
+            Array.isArray(
+              row.sourceDocuments
+            )
+              ? [...row.sourceDocuments]
+              : [];
+          existing.sourcePages =
+            Array.isArray(
+              row.sourcePages
+            )
+              ? [...row.sourcePages]
+              : [];
+          existing.updatedAt =
+            new Date().toISOString();
+          updated += 1;
+        } else {
+          skipped += 1;
+        }
+
+        return;
+      }
+
+      let id =
+        'context-analysis-' +
+        analysisContextHash(
+          contextKey
+        );
+
+      let suffix = 1;
+
+      while (
+        workContexts.some(
+          function (context) {
+            return context.id === id;
+          }
+        )
+      ) {
+        id =
+          'context-analysis-' +
+          analysisContextHash(
+            contextKey
+          ) +
+          '-' +
+          suffix;
+        suffix += 1;
+      }
+
+      const now =
+        new Date().toISOString();
+
+      workContexts.push({
+        id,
+        project,
+        object,
+        work,
+        startDate,
+        endDate,
+        safetyDays:
+          defaultSafetyDays,
+        sourceType:
+          'analysis-gpr',
+        sourceStatus:
+          row.status ||
+          'schedule',
+        sourceDocuments:
+          Array.isArray(
+            row.sourceDocuments
+          )
+            ? [...row.sourceDocuments]
+            : [],
+        sourcePages:
+          Array.isArray(
+            row.sourcePages
+          )
+            ? [...row.sourcePages]
+            : [],
+        requiresReview:
+          Boolean(row.requiresReview),
+        riskEligible: true,
+        reviewReasons:
+          Array.isArray(
+            row.reviewReasons
+          )
+            ? [...row.reviewReasons]
+            : [],
+        analysisSavedAt:
+          snapshot?.savedAt ||
+          '',
+        createdAt: now,
+        updatedAt: now
+      });
+
+      addedIds.push(id);
+      added += 1;
+    }
+  );
+
+  if (added > 0 || updated > 0) {
+    saveWorkContexts();
+    renderWorkContexts();
+
+    if (
+      !activeContextId &&
+      addedIds.length > 0
+    ) {
+      selectWorkContextById(
+        addedIds[0]
+      );
+    }
+
+    window.dispatchEvent(
+      new CustomEvent(
+        'buildmind:work-contexts-changed',
+        {
+          detail: {
+            action:
+              'analysis-import',
+            added,
+            updated,
+            skipped,
+            invalid,
+            reviewSkipped,
+            total:
+              workContexts.length
+          }
+        }
+      )
+    );
+  }
+
+  return {
+    success: true,
+    reason:
+      added > 0 || updated > 0
+        ? 'imported'
+        : 'no-changes',
+    added,
+    updated,
+    skipped,
+    invalid,
+    reviewSkipped,
+    totalRows:
+      rows.length,
+    totalContexts:
+      workContexts.length
+  };
+}
+
 function deleteWorkContext(
   contextId
 ) {
@@ -807,6 +1381,9 @@ window.addWorkContext =
 window.deleteWorkContext =
   deleteWorkContext;
 
+window.saveActiveContextSafetyDays =
+  saveActiveContextSafetyDays;
+
 window.BuildMindWorkContexts = {
   getAll:
     function () {
@@ -840,6 +1417,12 @@ window.BuildMindWorkContexts = {
 
   selectById:
     selectWorkContextById,
+
+  importFromAnalysis:
+    importWorkContextsFromAnalysis,
+
+  updateSafetyDays:
+    updateWorkContextSafetyDays,
 
   refresh:
     renderWorkContexts

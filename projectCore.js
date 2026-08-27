@@ -46,6 +46,9 @@ function emptyProjectCoreState() {
     linkedProjects:
       [],
 
+    archivedProjects:
+      [],
+
     activeNodeId:
       '',
 
@@ -107,6 +110,13 @@ function loadProjectCoreState() {
           parsed.linkedProjects
         )
           ? parsed.linkedProjects
+          : [],
+
+      archivedProjects:
+        Array.isArray(
+          parsed.archivedProjects
+        )
+          ? parsed.archivedProjects
           : [],
 
       timeline: {
@@ -303,6 +313,25 @@ function syncProjectCoreInputs() {
 }
 
 
+function clearProjectCoreInputs() {
+  [
+    'projectName',
+    'objectName',
+    'projectCoreCode',
+    'projectCoreContract'
+  ].forEach(
+    function (id) {
+      const input =
+        document.getElementById(id);
+
+      if (input) {
+        input.value = '';
+      }
+    }
+  );
+}
+
+
 function renderProjectCore() {
   const root =
     projectCoreState.rootProject;
@@ -330,6 +359,11 @@ function renderProjectCore() {
   const activeLabel =
     document.getElementById(
       'projectCoreActiveLabel'
+    );
+
+  const archiveMessage =
+    document.getElementById(
+      'projectCoreArchiveMessage'
     );
 
 
@@ -382,21 +416,36 @@ function renderProjectCore() {
               </small>
             </div>
 
-            <span
-              class="
-                project-core-status
-                project-core-status-${escapeProjectCoreHtml(
-                  root.status
-                )}
-              "
+            <div
+              class="project-core-node-actions"
             >
-              ${
-                root.status ===
-                  'closed'
-                  ? 'Закрыт'
-                  : 'Активен'
-              }
-            </span>
+              <span
+                class="
+                  project-core-status
+                  project-core-status-${escapeProjectCoreHtml(
+                    root.status
+                  )}
+                "
+              >
+                ${
+                  root.status ===
+                    'closed'
+                    ? 'Закрыт'
+                    : 'Активен'
+                }
+              </span>
+
+              <button
+                type="button"
+                class="project-core-delete-node"
+                data-node-id="${escapeProjectCoreHtml(
+                  root.id
+                )}"
+                aria-label="Удалить главный проект"
+              >
+                Удалить проект
+              </button>
+            </div>
           </div>
         `
         : (
@@ -491,6 +540,17 @@ function renderProjectCore() {
                             : 'Закрыть'
                         }
                       </button>
+
+                      <button
+                        type="button"
+                        class="project-core-delete-node"
+                        data-node-id="${escapeProjectCoreHtml(
+                          node.id
+                        )}"
+                        aria-label="Удалить связанный проект"
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </article>
                 `;
@@ -502,6 +562,20 @@ function renderProjectCore() {
             'Связанные проекты / пакеты пока не добавлены.' +
             '</div>'
           );
+  }
+
+
+  if (archiveMessage) {
+    const archivedCount =
+      projectCoreState
+        .archivedProjects
+        .length;
+
+    archiveMessage.textContent =
+      archivedCount
+        ? `В архиве проектов: ${archivedCount}. ` +
+          'Данные и история сохранены.'
+        : '';
   }
 
 
@@ -871,6 +945,128 @@ function toggleLinkedProjectStatus(
 }
 
 
+function archiveProjectCoreNode(
+  nodeId
+) {
+  const node =
+    getProjectCoreNodeById(
+      nodeId
+    );
+
+  if (!node) {
+    return false;
+  }
+
+  const confirmed =
+    typeof window.confirm !==
+      'function' ||
+    window.confirm(
+      'Удалить «' +
+      projectCoreNodeLabel(node) +
+      '»? Проект будет убран из активного списка, ' +
+      'а данные и история сохранятся в архиве.'
+    );
+
+  if (!confirmed) {
+    return false;
+  }
+
+  const now =
+    new Date().toISOString();
+
+  const archivedNodes = [];
+
+  if (
+    node.nodeType === 'root'
+  ) {
+    archivedNodes.push({
+      ...cloneProjectCore(node),
+      status: 'deleted',
+      archivedAt: now,
+      deletedAt: now,
+      archivedFrom: 'root'
+    });
+
+    projectCoreState
+      .linkedProjects
+      .forEach(
+        function (linkedNode) {
+          archivedNodes.push({
+            ...cloneProjectCore(
+              linkedNode
+            ),
+            status: 'deleted',
+            archivedAt: now,
+            deletedAt: now,
+            archivedFrom: 'root'
+          });
+        }
+      );
+
+    projectCoreState.rootProject =
+      null;
+
+    projectCoreState.linkedProjects =
+      [];
+
+    projectCoreState.activeNodeId =
+      '';
+
+    clearProjectCoreInputs();
+  } else {
+    projectCoreState.linkedProjects =
+      projectCoreState
+        .linkedProjects
+        .filter(
+          function (linkedNode) {
+            return (
+              linkedNode.id !==
+              nodeId
+            );
+          }
+        );
+
+    archivedNodes.push({
+      ...cloneProjectCore(node),
+      status: 'deleted',
+      archivedAt: now,
+      deletedAt: now,
+      archivedFrom: 'linked'
+    });
+
+    if (
+      projectCoreState
+        .activeNodeId ===
+      nodeId
+    ) {
+      projectCoreState.activeNodeId =
+        projectCoreState.rootProject
+          ? projectCoreState
+              .rootProject
+              .id
+          : '';
+    }
+  }
+
+  projectCoreState.archivedProjects =
+    [
+      ...projectCoreState
+        .archivedProjects,
+      ...archivedNodes
+    ];
+
+  saveProjectCoreState();
+  renderProjectCore();
+
+  setProjectCoreMessage(
+    'Проект убран из активного списка. ' +
+    'Данные и история сохранены в архиве.'
+  );
+
+  return true;
+}
+
+
 function selectProjectCoreNode(
   nodeId
 ) {
@@ -928,6 +1124,19 @@ function initializeProjectCore() {
   )?.addEventListener(
     'click',
     function (event) {
+      const deleteButton =
+        event.target.closest(
+          '.project-core-delete-node'
+        );
+
+      if (deleteButton) {
+        archiveProjectCoreNode(
+          deleteButton.dataset.nodeId
+        );
+
+        return;
+      }
+
       const button =
         event.target.closest(
           '.project-core-close-node'
@@ -975,6 +1184,14 @@ window.BuildMindProjectCore = {
       );
     },
 
+  getArchivedNodes:
+    function () {
+      return cloneProjectCore(
+        projectCoreState
+          .archivedProjects
+      );
+    },
+
   getActiveNode:
     function () {
       const node =
@@ -1006,6 +1223,9 @@ window.BuildMindProjectCore = {
 
   selectNode:
     selectProjectCoreNode,
+
+  archiveNode:
+    archiveProjectCoreNode,
 
   refresh:
     renderProjectCore

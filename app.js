@@ -330,6 +330,19 @@ function addDays(date, days) {
 }
 
 function riskFor(row, needDate, today) {
+  if (
+    window.BuildMindProcurementRisk &&
+    typeof window.BuildMindProcurementRisk
+      .calculate === 'function'
+  ) {
+    return window.BuildMindProcurementRisk
+      .calculate(
+        row,
+        { needDate },
+        today
+      );
+  }
+
   const stock =
     Number(row.stock) || 0;
 
@@ -490,6 +503,8 @@ function getMaterialScheduleForControl(row) {
   const matchedContext =
     contexts.find(function (context) {
       return (
+        context.riskEligible !==
+          false &&
         normalizeControlValue(context.project) ===
           materialProject &&
         normalizeControlValue(context.object) ===
@@ -545,97 +560,148 @@ function getControlPrimaryStatus(categories) {
 }
 
 function buildControlEvent(row, index, today) {
-  const need =
-    Number(row.need) || 0;
-
-  const stock =
-    Number(row.stock) || 0;
-
-  const reserved =
-    Number(row.reserved) || 0;
-
-  const confirmed =
-    Number(row.confirmed) || 0;
-
-  const leadDays =
-    Number(row.leadDays) || 0;
-
-  const free =
-    Math.max(stock - reserved, 0);
-
-  const available =
-    free + confirmed;
-
-  const deficit =
-    Math.max(need - available, 0);
-
   const schedule =
     getMaterialScheduleForControl(row);
 
-  const needDate =
-    schedule.needDate;
+  const riskEngine =
+    window.BuildMindProcurementRisk;
 
-  const orderDeadline =
-    needDate
-      ? addDays(needDate, -leadDays)
+  const calculation =
+    riskEngine &&
+    typeof riskEngine.calculate ===
+      'function'
+      ? riskEngine.calculate(
+          row,
+          schedule,
+          today
+        )
       : null;
 
+  const need =
+    calculation
+      ? calculation.need
+      : Number(row.need) || 0;
+
+  const stock =
+    calculation
+      ? calculation.stock
+      : Number(row.stock) || 0;
+
+  const reserved =
+    calculation
+      ? calculation.reserved
+      : Number(row.reserved) || 0;
+
+  const confirmed =
+    calculation
+      ? calculation.confirmed
+      : Number(row.confirmed) || 0;
+
+  const leadDays =
+    calculation
+      ? calculation.leadDays
+      : Number(row.leadDays) || 0;
+
+  const free =
+    calculation
+      ? calculation.free
+      : Math.max(stock - reserved, 0);
+
+  const available =
+    calculation
+      ? calculation.available
+      : free + confirmed;
+
+  const deficit =
+    calculation
+      ? calculation.deficit
+      : Math.max(need - available, 0);
+
+  const needDate =
+    calculation
+      ? calculation.needDate
+      : schedule.needDate;
+
+  const orderDeadline =
+    calculation
+      ? calculation.orderDeadline
+      : needDate
+        ? addDays(needDate, -leadDays)
+        : null;
+
   const deliveryDate =
-    parseDate(row.deliveryDate);
+    calculation
+      ? calculation.deliveryDate
+      : parseDate(row.deliveryDate);
 
   const deliveryAfterNeed =
-    Boolean(
+    calculation
+      ? calculation.deliveryAfterNeed
+      : Boolean(
+          deliveryDate &&
+          needDate &&
+          deliveryDate > needDate
+        );
+
+  const categories =
+    calculation
+      ? [...calculation.categories]
+      : [];
+
+  if (!calculation) {
+    if (
+      !needDate ||
+      deficit > 0 ||
+      deliveryAfterNeed
+    ) {
+      categories.push('critical');
+    }
+
+    if (deficit > 0) {
+      categories.push('order');
+    }
+
+    if (free < need) {
+      categories.push('low-stock');
+    }
+
+    if (
+      confirmed > 0 &&
       deliveryDate &&
-      needDate &&
-      deliveryDate > needDate
-    );
+      deliveryDate >= today
+    ) {
+      categories.push('expected');
+    }
 
-  const categories = [];
+    if (
+      confirmed > 0 &&
+      deliveryDate &&
+      deliveryDate < today &&
+      free < need
+    ) {
+      categories.push('delayed');
+    }
 
-  if (
-    !needDate ||
-    deficit > 0 ||
-    deliveryAfterNeed
-  ) {
-    categories.push('critical');
-  }
-
-  if (deficit > 0) {
-    categories.push('order');
-  }
-
-  if (free < need) {
-    categories.push('low-stock');
-  }
-
-  if (
-    confirmed > 0 &&
-    deliveryDate &&
-    deliveryDate >= today
-  ) {
-    categories.push('expected');
-  }
-
-  if (
-    confirmed > 0 &&
-    deliveryDate &&
-    deliveryDate < today &&
-    free < need
-  ) {
-    categories.push('delayed');
-  }
-
-  if (free >= need) {
-    categories.push('ok');
+    if (free >= need) {
+      categories.push('ok');
+    }
   }
 
   const primary =
     getControlPrimaryStatus(categories);
 
-  let reason = '';
-  let recommendation = '';
+  let reason =
+    calculation
+      ? calculation.reason
+      : '';
+  let recommendation =
+    calculation
+      ? calculation.action
+      : '';
 
-  if (primary === 'delayed') {
+  if (calculation) {
+    // Единый движок уже сформировал объяснение и действие.
+  } else if (primary === 'delayed') {
     reason =
       'Ожидаемая дата поставки уже прошла, а свободного остатка недостаточно.';
 
@@ -2996,6 +3062,193 @@ function prepareMaterialCandidateImport(
   });
 
   nameInput.focus();
+}
+
+
+function normalizeAnalysisMaterialCandidate(
+  candidate
+) {
+  const source =
+    candidate &&
+    typeof candidate === 'object'
+      ? candidate
+      : {};
+
+  const sourceDocuments =
+    Array.isArray(source.sourceDocuments)
+      ? source.sourceDocuments
+      : [];
+
+  const sourcePages =
+    Array.isArray(source.sourcePages)
+      ? source.sourcePages
+      : [];
+
+  return {
+    name:
+      source.name ||
+      source.workName ||
+      '',
+    quantity:
+      Number(source.quantity) || 0,
+    unit:
+      source.unit ||
+      'шт',
+    pageNumber:
+      Number(
+        source.pageNumber ||
+        source.sourcePage ||
+        sourcePages[0]
+      ) || 0,
+    sourceDocument:
+      source.sourceDocument ||
+      source.fileName ||
+      sourceDocuments[0] ||
+      'Анализ комплекта',
+    reviewStatus:
+      'confirmed',
+    transferStatus:
+      '',
+    status:
+      'Подтверждено инженером'
+  };
+}
+
+
+function analysisMaterialAlreadyTransferred(
+  candidate
+) {
+  const normalized =
+    normalizeAnalysisMaterialCandidate(
+      candidate
+    );
+
+  return materials.some(
+    function (row) {
+      return (
+        normalizeControlValue(
+          row.sourceDocument
+        ) ===
+          normalizeControlValue(
+            normalized.sourceDocument
+          ) &&
+        Number(row.sourcePage || 0) ===
+          Number(normalized.pageNumber || 0) &&
+        normalizeControlValue(row.name) ===
+          normalizeControlValue(
+            normalized.name
+          )
+      );
+    }
+  );
+}
+
+
+function prepareAnalysisMaterialImport(
+  candidate
+) {
+  const normalized =
+    normalizeAnalysisMaterialCandidate(
+      candidate
+    );
+
+  if (
+    !normalized.name ||
+    normalized.quantity <= 0
+  ) {
+    return {
+      success: false,
+      reason: 'invalid-candidate',
+      message:
+        'У найденного материала нет корректного наименования или количества.'
+    };
+  }
+
+  if (
+    analysisMaterialAlreadyTransferred(
+      normalized
+    )
+  ) {
+    return {
+      success: false,
+      reason: 'already-transferred',
+      message:
+        'Материал уже находится в контроле снабжения.'
+    };
+  }
+
+  const workContextsApi =
+    window.BuildMindWorkContexts;
+  const activeContext =
+    workContextsApi &&
+    typeof workContextsApi.getActive ===
+      'function'
+      ? workContextsApi.getActive()
+      : null;
+
+  if (
+    workContextsApi &&
+    !activeContext
+  ) {
+    return {
+      success: false,
+      reason:
+        'missing-work-context',
+      message:
+        'Сначала создайте или выберите рабочий контекст из ГПР, затем переносите материал.'
+    };
+  }
+
+  const documentItem = {
+    id:
+      'analysis-' +
+      normalizeControlValue(
+        normalized.sourceDocument
+      ),
+    file: {
+      name:
+        normalized.sourceDocument,
+      size: 0,
+      lastModified: 0
+    }
+  };
+
+  prepareMaterialCandidateImport(
+    documentItem,
+    normalized
+  );
+
+  if (activeContext) {
+    setMaterialInputValue(
+      'newProject',
+      activeContext.project
+    );
+    setMaterialInputValue(
+      'newObject',
+      activeContext.object
+    );
+    setMaterialInputValue(
+      'newWork',
+      activeContext.work
+    );
+  }
+
+  const message =
+    document.getElementById(
+      'materialFormMessage'
+    );
+
+  if (message) {
+    message.textContent =
+      'Материал перенесён из последнего анализа. ' +
+      'Проверьте работу, ответственного, остаток, поставку и нажмите «Добавить и пересчитать».';
+  }
+
+  return {
+    success: true,
+    reason: 'prepared',
+    candidate: normalized
+  };
 }
 
 function getProjectDocumentId(file) {
@@ -6985,4 +7238,70 @@ window.BuildMindProjectDocuments = {
 
   render:
     renderProjectDocuments
+};
+
+
+window.BuildMindProcurement = {
+  version:
+    'buildmind-procurement-v2.1',
+
+  getActiveMaterials:
+    function () {
+      return cloneMaterialValue(
+        materials
+      );
+    },
+
+  getArchivedMaterials:
+    function () {
+      return cloneMaterialValue(
+        archivedMaterials
+      );
+    },
+
+  calculateRisk:
+    function (
+      material,
+      context,
+      controlDate
+    ) {
+      if (
+        window.BuildMindProcurementRisk &&
+        typeof window.BuildMindProcurementRisk
+          .calculate === 'function'
+      ) {
+        return window.BuildMindProcurementRisk
+          .calculate(
+            material,
+            context,
+            controlDate
+          );
+      }
+
+      const needDate =
+        context?.needDate ||
+        (
+          context?.startDate
+            ? addDays(
+                parseDate(context.startDate),
+                -Number(context.safetyDays || 0)
+              )
+            : null
+        );
+
+      return riskFor(
+        material,
+        needDate,
+        controlDate || new Date()
+      );
+    },
+
+  prepareAnalysisMaterial:
+    prepareAnalysisMaterialImport,
+
+  isAnalysisMaterialTransferred:
+    analysisMaterialAlreadyTransferred,
+
+  refresh:
+    render
 };

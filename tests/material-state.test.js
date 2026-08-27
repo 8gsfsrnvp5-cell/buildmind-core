@@ -509,6 +509,94 @@ assert.equal(
 );
 
 
+const preparedFromAnalysis =
+  context.BuildMindProcurement
+    .prepareAnalysisMaterial({
+      workName:
+        'Кабель силовой',
+      quantity: 350,
+      unit: 'м',
+      sourceDocuments: [
+        'Спецификация 111.pdf'
+      ],
+      sourcePages: [4]
+    });
+
+assert.equal(
+  preparedFromAnalysis.success,
+  true
+);
+assert.equal(
+  element('newName').value,
+  'Кабель силовой'
+);
+assert.equal(
+  element('newNeed').value,
+  '350'
+);
+
+context.addMaterial();
+
+active =
+  readStoredArray(
+    localStorage,
+    'buildmind-procurement-data-v2-clean'
+  );
+
+assert.equal(active.length, 1);
+assert.equal(
+  active[0].sourceType,
+  'pdf-candidate'
+);
+assert.equal(
+  active[0].sourceDocument,
+  'Спецификация 111.pdf'
+);
+assert.equal(active[0].sourcePage, 4);
+assert.equal(
+  context.BuildMindProcurement
+    .isAnalysisMaterialTransferred({
+      workName:
+        'Кабель силовой',
+      quantity: 350,
+      unit: 'м',
+      sourceDocuments: [
+        'Спецификация 111.pdf'
+      ],
+      sourcePages: [4]
+    }),
+  true
+);
+
+context.BuildMindWorkContexts = {
+  getActive() {
+    return null;
+  }
+};
+
+const blockedWithoutContext =
+  context.BuildMindProcurement
+    .prepareAnalysisMaterial({
+      workName:
+        'Муфта соединительная',
+      quantity: 20,
+      unit: 'шт',
+      sourceDocuments: [
+        'Спецификация 111.pdf'
+      ],
+      sourcePages: [5]
+    });
+
+assert.equal(
+  blockedWithoutContext.success,
+  false
+);
+assert.equal(
+  blockedWithoutContext.reason,
+  'missing-work-context'
+);
+
+
 console.log(
   'BuildMind material state test: PASS'
 );

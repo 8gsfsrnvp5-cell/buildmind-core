@@ -1,11 +1,11 @@
 'use strict';
 
 /* ==================================================
-   BUILDMIND PROJECT INTAKE QUALITY — V1.10
+   BUILDMIND PROJECT INTAKE QUALITY — V1.11
    ================================================== */
 
 const BUILDMIND_PROJECT_INTAKE_QUALITY_VERSION =
-  'project-intake-quality-v1.10';
+  'project-intake-quality-v1.11';
 
 const PROJECT_INTAKE_QUALITY_LARGE_PDF_MIN_PAGES =
   10;
@@ -2029,17 +2029,35 @@ function evaluateProjectIntakeQualityResult(
     });
   }
 
-  if (
-    Number(result?.unreadablePagesCount) > 0
-  ) {
+  const unreadablePagesCount =
+    Number(result?.unreadablePagesCount) || 0;
+  const hasExtractedDownstream =
+    documents.some(function (documentItem) {
+      return (
+        (Array.isArray(documentItem?.works) &&
+          documentItem.works.length > 0) ||
+        (Array.isArray(documentItem?.materials) &&
+          documentItem.materials.length > 0)
+      );
+    });
+
+  if (unreadablePagesCount > 0) {
     issues.push({
       code: 'unreadable-pages',
-      severity: 'blocked',
+      severity:
+        hasExtractedDownstream
+          ? 'review'
+          : 'blocked',
       fileName: '',
       title:
         'Есть непрочитанные страницы',
       message:
-        `Не прочитано страниц: ${result.unreadablePagesCount}.`
+        `Не прочитано страниц: ${unreadablePagesCount}.` +
+        (
+          hasExtractedDownstream
+            ? ' Остальные извлечённые данные доступны для инженерной проверки.'
+            : ''
+        )
     });
   }
 
