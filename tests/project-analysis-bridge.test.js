@@ -174,6 +174,8 @@ const result = {
   ],
   workVolumeRowsCount: 2,
   scheduleRowsCount: 2,
+  rawWorkVolumeRowsCount: 2,
+  rawScheduleRowsCount: 3,
   unreadablePagesCount: 0
 };
 
@@ -182,6 +184,8 @@ const snapshot = first.api.persistResult(result);
 assert.equal(snapshot.summary.documentsCount, 2);
 assert.equal(snapshot.summary.workVolumeRowsCount, 2);
 assert.equal(snapshot.summary.scheduleRowsCount, 2);
+assert.equal(snapshot.summary.workVolumeRowsRawCount, 2);
+assert.equal(snapshot.summary.scheduleRowsRawCount, 3);
 assert.equal(snapshot.summary.matchedScheduleRowsCount, 1);
 assert.equal(snapshot.summary.scheduleOnlyRowsCount, 1);
 assert.equal(snapshot.summary.workVolumeOnlyRowsCount, 1);

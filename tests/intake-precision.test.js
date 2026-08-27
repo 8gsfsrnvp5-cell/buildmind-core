@@ -355,6 +355,42 @@ function run() {
     []
   );
 
+  const partialWithUsefulData =
+    intakeQuality.evaluateResult({
+      unreadablePagesCount: 1,
+      approvals: [],
+      documents: [
+        {
+          fileName: 'ROAD-PARTIAL.pdf',
+          totalPages: 10,
+          sections: [
+            {
+              kind: 'work-volume'
+            }
+          ],
+          works: [
+            {
+              workName: 'Устройство основания',
+              quantity: 100,
+              sourceType: 'pdf-work-volume'
+            }
+          ],
+          materials: []
+        }
+      ]
+    });
+
+  assert.equal(
+    partialWithUsefulData.status,
+    'review'
+  );
+  assert.equal(
+    partialWithUsefulData.issues.find(function (issue) {
+      return issue.code === 'unreadable-pages';
+    })?.severity,
+    'review'
+  );
+
   delete global.window;
 
   console.log(

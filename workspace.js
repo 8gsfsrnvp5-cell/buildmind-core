@@ -538,8 +538,8 @@ function createWorkspaceAnalysisSummary() {
 
     <div class="workspace-analysis-stats">
       <div><strong id="workspaceAnalysisDocuments">0</strong><span>Документов</span></div>
-      <div><strong id="workspaceAnalysisVorRows">0</strong><span>Строк ВОР</span></div>
-      <div><strong id="workspaceAnalysisGprRows">0</strong><span>Строк ГПР</span></div>
+      <div><strong id="workspaceAnalysisVorRows">0</strong><span id="workspaceAnalysisVorRowsLabel">Строк ВОР</span></div>
+      <div><strong id="workspaceAnalysisGprRows">0</strong><span id="workspaceAnalysisGprRowsLabel">Строк ГПР</span></div>
       <div><strong id="workspaceAnalysisMatched">0</strong><span>Связано ВОР ↔ ГПР</span></div>
       <div><strong id="workspaceAnalysisReview">0</strong><span>Требует проверки</span></div>
     </div>
@@ -586,10 +586,23 @@ function createWorkspaceAnalysisWorks() {
           Исходные значения не перезаписываются.
         </p>
       </div>
-      <span id="workspaceWorksAnalysisStatus" class="workspace-analysis-status">
-        Нет данных
-      </span>
+      <div class="workspace-analysis-head-actions">
+        <span id="workspaceWorksAnalysisStatus" class="workspace-analysis-status">
+          Нет данных
+        </span>
+        <button
+          id="workspaceImportGprContextsBtn"
+          type="button"
+          class="secondary-btn workspace-analysis-import-btn"
+        >
+          Создать контексты из ГПР
+        </button>
+      </div>
     </div>
+
+    <p id="workspaceGprContextImportStatus" class="muted workspace-analysis-import-status">
+      После заполнения проекта и объекта сроки ГПР можно перенести в рабочие контексты снабжения.
+    </p>
 
     <div class="workspace-analysis-stats workspace-analysis-stats-compact">
       <div><strong id="workspaceWorksVorCount">0</strong><span>ВОР</span></div>
@@ -641,6 +654,7 @@ function createWorkspaceAnalysisMaterials() {
         <h2>Материалы, найденные анализом</h2>
         <p class="muted">
           Кандидаты показаны отдельно от подтверждённого реестра материалов.
+          Перенос выполняется только после действия инженера.
         </p>
       </div>
       <span id="workspaceAnalysisMaterialsCount" class="workspace-analysis-status">
@@ -656,13 +670,18 @@ function createWorkspaceAnalysisMaterials() {
             <th>Ед.</th>
             <th>Количество</th>
             <th>Источник</th>
+            <th>Действие</th>
           </tr>
         </thead>
         <tbody id="workspaceAnalysisMaterialRows">
-          <tr><td colspan="4">Материалы анализом не найдены.</td></tr>
+          <tr><td colspan="5">Материалы анализом не найдены.</td></tr>
         </tbody>
       </table>
     </div>
+
+    <p id="workspaceAnalysisMaterialsMessage" class="muted workspace-analysis-import-status">
+      Найденные позиции не влияют на закупочный расчёт, пока инженер не перенесёт их в контроль снабжения.
+    </p>
   `;
 
   return section;
@@ -718,6 +737,145 @@ function formatWorkspaceAnalysisDate(value) {
 }
 
 
+function getWorkspaceAnalysisContextCount() {
+  if (
+    !window.BuildMindWorkContexts ||
+    typeof window.BuildMindWorkContexts
+      .getAll !== 'function'
+  ) {
+    return 0;
+  }
+
+  return window.BuildMindWorkContexts
+    .getAll()
+    .filter(
+      function (context) {
+        return (
+          context.sourceType ===
+          'analysis-gpr'
+        );
+      }
+    )
+    .length;
+}
+
+
+function setWorkspaceProcurementStatus(
+  elementId,
+  message
+) {
+  const element =
+    getWorkspaceElement(elementId);
+
+  if (element) {
+    element.textContent =
+      message || '';
+  }
+}
+
+
+function importWorkspaceAnalysisContexts() {
+  const integration =
+    window.BuildMindProcurementIntegration;
+
+  if (
+    !integration ||
+    typeof integration.importWorkContexts !==
+      'function'
+  ) {
+    setWorkspaceProcurementStatus(
+      'workspaceGprContextImportStatus',
+      'Модуль связи ГПР со снабжением не загружен.'
+    );
+    return null;
+  }
+
+  const result =
+    integration.importWorkContexts({
+      source:
+        'workspace-button',
+      safetyDays: 2
+    });
+
+  renderWorkspaceAnalysis();
+  updateWorkspaceDashboard();
+
+  setWorkspaceProcurementStatus(
+    'workspaceGprContextImportStatus',
+    result.message ||
+      'Перенос контекстов завершён.'
+  );
+
+  return result;
+}
+
+
+function isWorkspaceAnalysisMaterialTransferred(
+  candidate
+) {
+  return Boolean(
+    window.BuildMindProcurement &&
+    typeof window.BuildMindProcurement
+      .isAnalysisMaterialTransferred ===
+      'function' &&
+    window.BuildMindProcurement
+      .isAnalysisMaterialTransferred(
+        candidate
+      )
+  );
+}
+
+
+function prepareWorkspaceAnalysisMaterial(
+  materialIndex
+) {
+  const snapshot =
+    getWorkspaceAnalysisSnapshot();
+  const candidate =
+    snapshot?.materials?.[
+      Number(materialIndex)
+    ];
+  const procurement =
+    window.BuildMindProcurement;
+
+  if (!candidate) {
+    setWorkspaceProcurementStatus(
+      'workspaceAnalysisMaterialsMessage',
+      'Позиция анализа не найдена. Повторите анализ комплекта.'
+    );
+    return null;
+  }
+
+  if (
+    !procurement ||
+    typeof procurement
+      .prepareAnalysisMaterial !==
+      'function'
+  ) {
+    setWorkspaceProcurementStatus(
+      'workspaceAnalysisMaterialsMessage',
+      'Модуль контроля снабжения не загружен.'
+    );
+    return null;
+  }
+
+  const result =
+    procurement.prepareAnalysisMaterial(
+      candidate
+    );
+
+  setWorkspaceProcurementStatus(
+    'workspaceAnalysisMaterialsMessage',
+    result.success
+      ? 'Позиция подготовлена. Проверьте форму ниже и подтвердите добавление в расчёт.'
+      : result.message ||
+        'Позицию не удалось подготовить.'
+  );
+
+  return result;
+}
+
+
 function renderWorkspaceAnalysis() {
   const snapshot = getWorkspaceAnalysisSnapshot();
   const summary = snapshot?.summary || {};
@@ -739,6 +897,43 @@ function renderWorkspaceAnalysis() {
     'workspaceAnalysisGprRows',
     summary.scheduleRowsCount || 0
   );
+
+  const rawVorRowsCount =
+    Number(summary.workVolumeRowsRawCount) ||
+    Number(summary.workVolumeRowsCount) ||
+    0;
+  const rawGprRowsCount =
+    Number(summary.scheduleRowsRawCount) ||
+    Number(summary.scheduleRowsCount) ||
+    0;
+  const uniqueVorRowsCount =
+    Number(summary.workVolumeRowsCount) ||
+    0;
+  const uniqueGprRowsCount =
+    Number(summary.scheduleRowsCount) ||
+    0;
+  const vorRowsLabel =
+    getWorkspaceElement(
+      'workspaceAnalysisVorRowsLabel'
+    );
+  const gprRowsLabel =
+    getWorkspaceElement(
+      'workspaceAnalysisGprRowsLabel'
+    );
+
+  if (vorRowsLabel) {
+    vorRowsLabel.textContent =
+      rawVorRowsCount > uniqueVorRowsCount
+        ? `Уникальные строки ВОР · исходных ${rawVorRowsCount}`
+        : 'Строк ВОР';
+  }
+
+  if (gprRowsLabel) {
+    gprRowsLabel.textContent =
+      rawGprRowsCount > uniqueGprRowsCount
+        ? `Уникальные строки ГПР · исходных ${rawGprRowsCount}`
+        : 'Строк ГПР';
+  }
   setWorkspaceAnalysisText(
     'workspaceAnalysisMatched',
     summary.matchedScheduleRowsCount || 0
@@ -776,6 +971,30 @@ function renderWorkspaceAnalysis() {
       'workspace-analysis-status workspace-analysis-status-' +
       (snapshot?.qualityStatus || 'empty');
   });
+
+  const importContextsButton =
+    getWorkspaceElement(
+      'workspaceImportGprContextsBtn'
+    );
+  const importedContextsCount =
+    getWorkspaceAnalysisContextCount();
+
+  if (importContextsButton) {
+    importContextsButton.disabled =
+      !snapshot ||
+      Number(
+        summary.scheduleRowsCount || 0
+      ) === 0;
+  }
+
+  setWorkspaceProcurementStatus(
+    'workspaceGprContextImportStatus',
+    !snapshot
+      ? 'Сначала выполните анализ комплекта ВОР/ГПР.'
+      : importedContextsCount > 0
+        ? `Из ГПР создано рабочих контекстов: ${importedContextsCount}. Сроки участвуют в расчёте потребности и крайней даты заказа.`
+        : 'Заполните проект и объект, затем создайте рабочие контексты из сроков ГПР.'
+  );
 
   setWorkspaceAnalysisText(
     'workspaceAnalysisSavedAt',
@@ -841,9 +1060,13 @@ function renderWorkspaceAnalysis() {
 
   if (materialBody) {
     materialBody.innerHTML = materials.length === 0
-      ? '<tr><td colspan="4">Материалы анализом не найдены.</td></tr>'
-      : materials.slice(0, 500).map(function (item) {
+      ? '<tr><td colspan="5">Материалы анализом не найдены.</td></tr>'
+      : materials.slice(0, 500).map(function (item, index) {
           const sources = (item.sourceDocuments || []).join(', ') || '—';
+          const transferred =
+            isWorkspaceAnalysisMaterialTransferred(
+              item
+            );
 
           return `
             <tr>
@@ -851,6 +1074,16 @@ function renderWorkspaceAnalysis() {
               <td>${escapeWorkspaceHtml(item.unit || '—')}</td>
               <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisQuantity(item.quantity))}</td>
               <td>${escapeWorkspaceHtml(sources)}</td>
+              <td>
+                <button
+                  type="button"
+                  class="small-btn workspace-analysis-material-action"
+                  data-analysis-material-index="${index}"
+                  ${transferred ? 'disabled' : ''}
+                >
+                  ${transferred ? 'Перенесено' : 'В контроль снабжения'}
+                </button>
+              </td>
             </tr>
           `;
         }).join('');
@@ -1664,6 +1897,40 @@ function initializeWorkspaceObservers() {
       updateWorkspaceDashboard();
     }
   );
+
+
+  window.addEventListener(
+    'buildmind:materials-changed',
+    function () {
+      renderWorkspaceAnalysis();
+      updateWorkspaceDashboard();
+    }
+  );
+
+
+  window.addEventListener(
+    'buildmind:work-contexts-changed',
+    function () {
+      renderWorkspaceAnalysis();
+      updateWorkspaceDashboard();
+    }
+  );
+
+
+  window.addEventListener(
+    'buildmind:procurement-integration-changed',
+    function (event) {
+      renderWorkspaceAnalysis();
+      updateWorkspaceDashboard();
+
+      if (event?.detail?.message) {
+        setWorkspaceProcurementStatus(
+          'workspaceGprContextImportStatus',
+          event.detail.message
+        );
+      }
+    }
+  );
 }
 
 
@@ -1736,6 +2003,34 @@ function initializeBuildMindWorkspace() {
           .dataset
           .workspaceOpen
       );
+    }
+  );
+
+
+  document.addEventListener(
+    'click',
+    function (event) {
+      const importContextsButton =
+        event.target.closest(
+          '#workspaceImportGprContextsBtn'
+        );
+
+      if (importContextsButton) {
+        importWorkspaceAnalysisContexts();
+        return;
+      }
+
+      const materialButton =
+        event.target.closest(
+          '[data-analysis-material-index]'
+        );
+
+      if (materialButton) {
+        prepareWorkspaceAnalysisMaterial(
+          materialButton.dataset
+            .analysisMaterialIndex
+        );
+      }
     }
   );
 

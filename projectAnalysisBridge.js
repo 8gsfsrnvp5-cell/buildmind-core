@@ -595,8 +595,14 @@ function buildProjectAnalysisSnapshot(result) {
       workVolumeRowsCount:
         Number(result.workVolumeRowsCount) ||
         workVolumeRows.length,
+      workVolumeRowsRawCount:
+        Number(result.rawWorkVolumeRowsCount) ||
+        workVolumeRows.length,
       scheduleRowsCount:
         Number(result.scheduleRowsCount) ||
+        scheduleRows.length,
+      scheduleRowsRawCount:
+        Number(result.rawScheduleRowsCount) ||
         scheduleRows.length,
       materialsCount:
         materials.length,
