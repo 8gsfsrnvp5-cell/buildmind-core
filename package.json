@@ -1,0 +1,9 @@
+{
+  "name": "buildmind-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BuildMind — инженерный контроль документов, работ, материалов, сроков и рисков проекта (клиентское приложение на чистом JS).",
+  "scripts": {
+    "test": "node tests/material-state.test.js"
+  }
+}
