@@ -116,9 +116,9 @@ assert.equal(
   supported.truthStatus,
   'extracted'
 );
-assert.deepEqual(
-  supported.qualityFlags,
-  []
+assert.equal(
+  supported.qualityFlags.length,
+  0
 );
 
 const confirmedWithoutEvidence =
