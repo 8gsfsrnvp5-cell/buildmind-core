@@ -93,7 +93,10 @@ function getProjectAnalysisCandidatePages(candidate) {
         )
       ]
         .map(Number)
-        .filter(Number.isFinite)
+        // Number(null) === 0: отсутствующая страница не становится «стр. 0».
+        .filter(function (page) {
+          return Number.isInteger(page) && page > 0;
+        })
     )
   ).sort(function (first, second) {
     return first - second;
@@ -188,6 +191,9 @@ function sanitizeProjectAnalysisReviewItem(item) {
     sourceRow:
       item?.sourceRow ??
       null,
+    sourceSheet:
+      item?.sourceSheet ||
+      '',
     pageNumbers:
       Array.isArray(item?.pageNumbers)
         ? item.pageNumbers.slice(0, 30)
@@ -200,6 +206,52 @@ function sanitizeProjectAnalysisReviewItem(item) {
       Array.isArray(item?.reasons)
         ? item.reasons.slice(0, 8)
         : []
+  };
+}
+
+
+function getProjectAnalysisRowSource(row) {
+  return row
+    ? {
+        sourceDocuments: [...(row.sourceDocuments || [])],
+        sourcePages: [...(row.sourcePages || [])],
+        sourceSheet: row.sourceSheet || '',
+        sourceRow: row.sourceRow ?? null
+      }
+    : null;
+}
+
+
+function sanitizeProjectAnalysisAgentReport(report) {
+  const source =
+    report?.payload?.sourceDocument ||
+    report?.payload?.fileName ||
+    report?.metadata?.fileName ||
+    '';
+
+  return {
+    reportId:
+      report?.reportId || '',
+    agentId:
+      report?.agentId || '',
+    taskType:
+      report?.taskType || '',
+    label:
+      report?.metadata?.label || '',
+    status:
+      report?.status || '',
+    truthStatus:
+      report?.truthStatus || 'needs-review',
+    qualityFlags:
+      Array.isArray(report?.qualityFlags)
+        ? report.qualityFlags.slice(0, 10)
+        : [],
+    evidenceCount:
+      Array.isArray(report?.evidence)
+        ? report.evidence.length
+        : 0,
+    sourceFile:
+      typeof source === 'string' ? source : ''
   };
 }
 
@@ -322,6 +374,10 @@ function buildProjectAnalysisCombinedRows(
     return {
       rowId:
         'schedule-' + scheduleIndex,
+      vorSource:
+        getProjectAnalysisRowSource(volumeRow),
+      gprSource:
+        getProjectAnalysisRowSource(scheduleRow),
       status:
         volumeRow
           ? 'matched'
@@ -393,6 +449,10 @@ function buildProjectAnalysisCombinedRows(
     rows.push({
       rowId:
         'volume-' + volumeIndex,
+      vorSource:
+        getProjectAnalysisRowSource(volumeRow),
+      gprSource:
+        null,
       status:
         'volume-only',
       matchScore:
@@ -585,6 +645,9 @@ function buildProjectAnalysisSnapshot(result) {
       combined.rows,
     materials,
     reviewItems,
+    agentReports:
+      (Array.isArray(result.agentReports) ? result.agentReports : [])
+        .map(sanitizeProjectAnalysisAgentReport),
     approvalsCount:
       Array.isArray(result.approvals)
         ? result.approvals.length

@@ -27,8 +27,8 @@ const intake =
 
 [
   'agentContracts.js?v=1',
-  'agentOrchestrator.js?v=1',
-  'projectIntake.js?v=16'
+  'agentOrchestrator.js?v=2',
+  'projectIntake.js?v=17'
 ].forEach(function (asset) {
   assert.equal(
     index.includes(asset),

@@ -105,6 +105,58 @@ function resolveBuildMindAgent(
   ) || null;
 }
 
+function hasBuildMindVerifiedPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const evidence = Array.isArray(payload.evidence)
+    ? payload.evidence
+    : [];
+
+  const hasEvidence = evidence.some(function (item) {
+    return Boolean(
+      item &&
+      (
+        item.sourceFile ||
+        item.sourcePage ||
+        item.sourceSheet ||
+        item.sourceCell ||
+        item.sourceObject ||
+        item.sourceQuote ||
+        item.documentId ||
+        item.recordId
+      )
+    );
+  });
+
+  const directSource = Boolean(
+    payload.source ||
+    payload.sourceFile ||
+    payload.sourceDocument
+  );
+
+  return hasEvidence || directSource;
+}
+
+function hasBuildMindCandidateData(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  return [
+    'facts',
+    'works',
+    'materials',
+    'rows',
+    'items',
+    'candidates'
+  ].some(function (key) {
+    return Array.isArray(payload[key]) &&
+      payload[key].length > 0;
+  });
+}
+
 async function runBuildMindAgent(
   taskType,
   input,
@@ -183,22 +235,59 @@ async function runBuildMindAgent(
       return payload;
     }
 
+    const verifiedPayload =
+      hasBuildMindVerifiedPayload(
+        payload
+      );
+
+    const candidateData =
+      hasBuildMindCandidateData(
+        payload
+      );
+
+    const payloadIssues =
+      candidateData && !verifiedPayload
+        ? [
+            'AGENT_PAYLOAD_WITHOUT_EVIDENCE'
+          ]
+        : [];
+
     return contracts.createReport({
       agentId:
         agent.id,
       taskType,
       status:
-        'completed',
+        payloadIssues.length > 0
+          ? 'partial'
+          : 'completed',
+      truthStatus:
+        verifiedPayload
+          ? 'extracted'
+          : 'needs-review',
       source:
         'local-specialized-agent',
       confidence:
-        agent.confidence ||
-        'medium',
+        payloadIssues.length > 0
+          ? 'low'
+          : (
+              agent.confidence ||
+              'medium'
+            ),
+      issues:
+        payloadIssues,
+      evidence:
+        Array.isArray(payload?.evidence)
+          ? payload.evidence
+          : [],
       payload,
       metadata: {
         label:
           agent.label ||
-          agent.id
+          agent.id,
+        fileName:
+          input?.file?.name ||
+          input?.documentItem?.file?.name ||
+          ''
       },
       startedAt
     });
