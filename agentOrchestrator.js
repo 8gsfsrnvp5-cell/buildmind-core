@@ -283,7 +283,11 @@ async function runBuildMindAgent(
       metadata: {
         label:
           agent.label ||
-          agent.id
+          agent.id,
+        fileName:
+          input?.file?.name ||
+          input?.documentItem?.file?.name ||
+          ''
       },
       startedAt
     });

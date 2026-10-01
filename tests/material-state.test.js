@@ -596,6 +596,38 @@ assert.equal(
   'missing-work-context'
 );
 
+// Контракт достоверности: единица и источник не подставляются догадкой.
+const blockedWithoutUnit =
+  context.BuildMindProcurement
+    .prepareAnalysisMaterial({
+      workName:
+        'Муфта соединительная',
+      quantity: 20,
+      sourceDocuments: [
+        'Спецификация 111.pdf'
+      ],
+      sourcePages: [5]
+    });
+
+assert.equal(
+  blockedWithoutUnit.reason,
+  'missing-unit'
+);
+
+const blockedWithoutSource =
+  context.BuildMindProcurement
+    .prepareAnalysisMaterial({
+      workName:
+        'Муфта соединительная',
+      quantity: 20,
+      unit: 'шт'
+    });
+
+assert.equal(
+  blockedWithoutSource.reason,
+  'missing-source'
+);
+
 
 console.log(
   'BuildMind material state test: PASS'

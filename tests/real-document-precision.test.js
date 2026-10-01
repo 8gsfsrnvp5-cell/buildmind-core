@@ -5,8 +5,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
-const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const intake = fs.readFileSync(path.join(root, 'projectIntake.js'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8')
+  // Windows-копия с core.autocrlf получает CRLF; маркеры написаны с LF.
+  .replace(/\r\n/g, '\n');
+const intake = fs.readFileSync(path.join(root, 'projectIntake.js'), 'utf8')
+  .replace(/\r\n/g, '\n');
 const vm = require('node:vm');
 const qualitySandbox = {
   window: {},

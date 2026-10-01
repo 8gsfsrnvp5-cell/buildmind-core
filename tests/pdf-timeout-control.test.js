@@ -45,7 +45,7 @@ const index =
 
 assert.equal(
   index.includes(
-    'app.js?v=18'
+    'app.js?v=19'
   ),
   true
 );
@@ -59,7 +59,7 @@ assert.equal(
 
 assert.equal(
   index.includes(
-    'agentOrchestrator.js?v=1'
+    'agentOrchestrator.js?v=2'
   ),
   true
 );
