@@ -211,3 +211,34 @@ assert.equal(restored.combinedRows.length, 3);
 assert.equal(second.imports.length, 1);
 
 console.log('BuildMind project analysis bridge test: PASS');
+
+// Роль «авто»: строки ВОР и ГПР отбираются по виду документа, который
+// определил анализ (регресс: автоопределённые документы не попадали в сверку).
+const autoSandbox = createSandbox(new Map());
+const autoSnapshot = autoSandbox.api.persistResult({
+  ...result,
+  documents: result.documents.map(function (documentItem) {
+    return { ...documentItem, documentRole: 'auto' };
+  }),
+  workVolumeRowsCount: 0,
+  scheduleRowsCount: 0,
+  rawWorkVolumeRowsCount: 0,
+  rawScheduleRowsCount: 0
+});
+
+assert.equal(autoSnapshot.workVolumeRows.length, 2);
+assert.equal(autoSnapshot.scheduleRows.length, 2);
+assert.equal(autoSnapshot.summary.matchedScheduleRowsCount, 1);
+
+// Выбор пользователя важнее автоопределения.
+const chosenSnapshot = createSandbox(new Map()).api.persistResult({
+  ...result,
+  documents: result.documents.map(function (documentItem) {
+    return documentItem.documentId === 'gpr'
+      ? { ...documentItem, documentRole: 'work-volume', kind: 'schedule' }
+      : { ...documentItem, documentRole: 'auto' };
+  })
+});
+
+assert.equal(chosenSnapshot.scheduleRows.length, 0);
+assert.equal(chosenSnapshot.workVolumeRows.length, 4);

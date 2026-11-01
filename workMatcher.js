@@ -160,12 +160,182 @@ function getWorkMatcherRoots(
 }
 
 
+/*
+  Фраза типового названия внутри названия работы: короткие сокращения
+  (ВРУ, ГКЛ, МАФ) — только целым словом, остальные — с начала слова,
+  чтобы «вру» не находилось во «вручную».
+*/
+/*
+  Разбор фраз (нормализация и основы слов) запоминается: псевдонимы базы
+  знаний одни и те же для всех строк документа, а без кэша на ведомости
+  в несколько тысяч строк разбор занимал десятки секунд. Размер кэша
+  ограничен, чтобы память не росла от уникальных названий из документов.
+*/
+const WORK_MATCHER_CACHE_LIMIT = 20000;
+const workMatcherNormalizedCache = new Map();
+const workMatcherRootsCache = new Map();
+
+function rememberWorkMatcherValue(
+  cache,
+  key,
+  compute
+) {
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+
+  if (cache.size >= WORK_MATCHER_CACHE_LIMIT) {
+    cache.clear();
+  }
+
+  const value = compute(key);
+  cache.set(key, value);
+  return value;
+}
+
+function getCachedWorkMatcherNormalized(
+  value
+) {
+  return rememberWorkMatcherValue(
+    workMatcherNormalizedCache,
+    String(value || ''),
+    normalizeWorkMatcherText
+  );
+}
+
+function getCachedWorkMatcherRoots(
+  normalizedValue
+) {
+  return rememberWorkMatcherValue(
+    workMatcherRootsCache,
+    normalizedValue,
+    getWorkMatcherRoots
+  );
+}
+
+
+function findWorkMatcherPhrase(
+  text,
+  phrase
+) {
+  if (!phrase) {
+    return -1;
+  }
+
+  let from = 0;
+
+  while (from <= text.length) {
+    const index =
+      text.indexOf(
+        phrase,
+        from
+      );
+
+    if (index < 0) {
+      return -1;
+    }
+
+    const end =
+      index + phrase.length;
+
+    const startsWord =
+      index === 0 ||
+      text[index - 1] === ' ';
+
+    const endsWord =
+      end === text.length ||
+      text[end] === ' ';
+
+    if (
+      startsWord &&
+      (
+        phrase.length > 4 ||
+        endsWord
+      )
+    ) {
+      return index;
+    }
+
+    from = index + 1;
+  }
+
+  return -1;
+}
+
+const WORK_MATCHER_KIND_RANK = {
+  exact: 0,
+  contains: 1,
+  contained: 2,
+  roots: 3,
+  partial: 4,
+  none: 5
+};
+
+/*
+  Общие слова в начале типового названия («устройство», «монтаж»…)
+  почти ничего не говорят о виде работ — конкретность фразы
+  считаем без них.
+*/
+const WORK_MATCHER_GENERIC_WORDS = [
+  'устройство',
+  'монтаж',
+  'установка',
+  'прокладка',
+  'укладка',
+  'выполнение',
+  'производство'
+];
+
+function getWorkMatcherInformativeLength(
+  normalizedPhrase
+) {
+  const words =
+    normalizedPhrase.split(' ');
+
+  while (
+    words.length > 1 &&
+    WORK_MATCHER_GENERIC_WORDS.includes(
+      words[0]
+    )
+  ) {
+    words.shift();
+  }
+
+  return words.join(' ').length;
+}
+
+/*
+  При равном балле: сначала более точный вид совпадения,
+  затем более конкретная фраза (длиннее без общих слов),
+  затем фраза ближе к началу названия работы.
+*/
+function compareWorkMatcherEvidence(
+  first,
+  second
+) {
+  return (
+    (
+      WORK_MATCHER_KIND_RANK[first.kind] -
+      WORK_MATCHER_KIND_RANK[second.kind]
+    ) ||
+    (
+      second.length -
+      first.length
+    ) ||
+    (
+      first.position -
+      second.position
+    )
+  );
+}
+
+
 function calculateWorkMatcherScore(
   query,
   workItem
 ) {
   const normalizedQuery =
-    normalizeWorkMatcherText(
+    getCachedWorkMatcherNormalized(
       query
     );
 
@@ -187,10 +357,16 @@ function calculateWorkMatcherScore(
   let bestScore = 0;
   let bestReasons = [];
 
+  let best = {
+    kind: 'none',
+    position: Infinity,
+    length: 0
+  };
+
   searchableValues.forEach(
     function (candidateValue) {
       const normalizedCandidate =
-        normalizeWorkMatcherText(
+        getCachedWorkMatcherNormalized(
           candidateValue
         );
 
@@ -201,6 +377,12 @@ function calculateWorkMatcherScore(
       let score = 0;
       const reasons = [];
 
+      let kind =
+        'partial';
+
+      let position =
+        Infinity;
+
       /*
         1. Полное совпадение
       */
@@ -210,6 +392,11 @@ function calculateWorkMatcherScore(
         normalizedCandidate
       ) {
         score = 100;
+
+        kind =
+          'exact';
+
+        position = 0;
 
         reasons.push(
           'Точное совпадение с типовым названием или псевдонимом.'
@@ -230,11 +417,21 @@ function calculateWorkMatcherScore(
       */
 
       else if (
-        normalizedQuery.includes(
+        findWorkMatcherPhrase(
+          normalizedQuery,
           normalizedCandidate
-        )
+        ) >= 0
       ) {
         score = 92;
+
+        kind =
+          'contains';
+
+        position =
+          findWorkMatcherPhrase(
+            normalizedQuery,
+            normalizedCandidate
+          );
 
         reasons.push(
           'Типовое название или псевдоним полностью входит в название работы.'
@@ -247,11 +444,17 @@ function calculateWorkMatcherScore(
       */
 
       else if (
-        normalizedCandidate.includes(
+        findWorkMatcherPhrase(
+          normalizedCandidate,
           normalizedQuery
-        )
+        ) >= 0
       ) {
         score = 88;
+
+        kind =
+          'contained';
+
+        position = 0;
 
         reasons.push(
           'Название работы входит в типовое название или псевдоним.'
@@ -265,12 +468,12 @@ function calculateWorkMatcherScore(
 
            else {
         const queryRoots =
-          getWorkMatcherRoots(
+          getCachedWorkMatcherRoots(
             normalizedQuery
           );
 
         const candidateRoots =
-          getWorkMatcherRoots(
+          getCachedWorkMatcherRoots(
             normalizedCandidate
           );
 
@@ -369,6 +572,9 @@ function calculateWorkMatcherScore(
         ) {
           score = 92;
 
+          kind =
+            'roots';
+
           reasons.push(
             'Все ключевые основы типового названия найдены в названии работы с учётом словоформ.'
           );
@@ -409,11 +615,29 @@ function calculateWorkMatcherScore(
         }
       }
 
+      const evidence = {
+        kind,
+        position,
+        length:
+          getWorkMatcherInformativeLength(
+            normalizedCandidate
+          )
+      };
+
       if (
-        score > bestScore
+        score > bestScore ||
+        (
+          score > 0 &&
+          score === bestScore &&
+          compareWorkMatcherEvidence(
+            evidence,
+            best
+          ) < 0
+        )
       ) {
         bestScore = score;
         bestReasons = reasons;
+        best = evidence;
       }
     }
   );
@@ -428,7 +652,10 @@ function calculateWorkMatcherScore(
       ),
 
     reasons:
-      bestReasons
+      bestReasons,
+
+    evidence:
+      best
   };
 }
 
@@ -476,7 +703,8 @@ function getWorkMatcherConfidence(
 
 
 function findBuildMindWorkMatch(
-  workName
+  workName,
+  options
 ) {
   const knowledge =
     window.BuildMindRoadKnowledge;
@@ -528,7 +756,14 @@ function findBuildMindWorkMatch(
       : null;
   
   const candidates =
-    knowledge.works
+    (
+      options &&
+      Array.isArray(
+        options.works
+      )
+        ? options.works
+        : knowledge.works
+    )
       .map(
         function (workItem) {
           const result =
@@ -542,7 +777,10 @@ function findBuildMindWorkMatch(
             score:
               result.score,
             reasons:
-              result.reasons
+              result.reasons,
+
+            evidence:
+              result.evidence
           };
         }
       )
@@ -552,8 +790,14 @@ function findBuildMindWorkMatch(
           second
         ) {
           return (
-            second.score -
-            first.score
+            (
+              second.score -
+              first.score
+            ) ||
+            compareWorkMatcherEvidence(
+              first.evidence,
+              second.evidence
+            )
           );
         }
       );
