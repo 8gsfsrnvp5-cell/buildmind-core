@@ -48,6 +48,89 @@ function normalizeBuildMindAgentArray(value) {
     : [];
 }
 
+
+const BUILDMIND_TRUTH_STATUSES = [
+  'confirmed',
+  'extracted',
+  'calculated',
+  'needs-review',
+  'conflict',
+  'not-found',
+  'unreadable',
+  'rejected',
+  'manual-override'
+];
+
+function hasBuildMindEvidence(value) {
+  if (!value) {
+    return false;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value !== 'object') {
+    return false;
+  }
+
+  return Boolean(
+    value.sourceFile ||
+    value.sourcePage ||
+    value.sourceSheet ||
+    value.sourceCell ||
+    value.sourceObject ||
+    value.sourceQuote ||
+    value.documentId ||
+    value.recordId
+  );
+}
+
+function normalizeBuildMindTruthStatus(value) {
+  return BUILDMIND_TRUTH_STATUSES.includes(value)
+    ? value
+    : 'needs-review';
+}
+
+function validateBuildMindAgentReportIntegrity(report) {
+  const issues = [];
+
+  if (!report || typeof report !== 'object') {
+    return {
+      valid: false,
+      issues: ['REPORT_IS_NOT_AN_OBJECT']
+    };
+  }
+
+  const evidence = normalizeBuildMindAgentArray(report.evidence);
+  const facts = normalizeBuildMindAgentArray(report.facts);
+
+  if (facts.length > 0 && evidence.length === 0) {
+    issues.push('FACTS_HAVE_NO_EVIDENCE');
+  }
+
+  const unsupportedFacts = facts.filter(function (fact) {
+    return (
+      fact &&
+      typeof fact === 'object' &&
+      !hasBuildMindEvidence(fact.evidence || fact.source || fact)
+    );
+  });
+
+  if (unsupportedFacts.length > 0) {
+    issues.push('UNSUPPORTED_FACTS_PRESENT');
+  }
+
+  if (report.truthStatus === 'confirmed' && issues.length > 0) {
+    issues.push('CONFIRMED_STATUS_REQUIRES_EVIDENCE');
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues
+  };
+}
+
 function createBuildMindAgentReport(options) {
   const settings =
     options &&
@@ -79,7 +162,7 @@ function createBuildMindAgentReport(options) {
         )
       : null;
 
-  const status =
+  let status =
     [
       'completed',
       'partial',
@@ -90,7 +173,44 @@ function createBuildMindAgentReport(options) {
       settings.status
     )
       ? settings.status
-      : 'completed';
+      : 'partial';
+
+  const truthStatus =
+    normalizeBuildMindTruthStatus(
+      settings.truthStatus
+    );
+
+  const facts =
+    normalizeBuildMindAgentArray(
+      settings.facts
+    );
+
+  const evidence =
+    normalizeBuildMindAgentArray(
+      settings.evidence
+    );
+
+  const integrity =
+    validateBuildMindAgentReportIntegrity({
+      facts,
+      evidence,
+      truthStatus
+    });
+
+  const qualityFlags =
+    normalizeBuildMindAgentArray(
+      settings.qualityFlags
+    ).slice();
+
+  if (!integrity.valid) {
+    qualityFlags.push(
+      ...integrity.issues
+    );
+
+    if (status === 'completed') {
+      status = 'partial';
+    }
+  }
 
   return {
     schemaVersion:
@@ -124,20 +244,26 @@ function createBuildMindAgentReport(options) {
       settings.confidence ||
       'medium',
 
-    facts:
-      normalizeBuildMindAgentArray(
-        settings.facts
-      ),
+    facts,
 
     issues:
       normalizeBuildMindAgentArray(
         settings.issues
+      ).concat(
+        integrity.issues
       ),
 
-    evidence:
-      normalizeBuildMindAgentArray(
-        settings.evidence
-      ),
+    evidence,
+
+    truthStatus,
+
+    qualityFlags,
+
+    manualReview:
+      settings.manualReview &&
+      typeof settings.manualReview === 'object'
+        ? settings.manualReview
+        : null,
 
     payload:
       settings.payload === undefined
@@ -276,6 +402,12 @@ window.BuildMindAgentContracts = {
 
   isReport:
     isBuildMindAgentReport,
+
+  validateIntegrity:
+    validateBuildMindAgentReportIntegrity,
+
+  hasEvidence:
+    hasBuildMindEvidence,
 
   summarizeReports:
     summarizeBuildMindAgentReports

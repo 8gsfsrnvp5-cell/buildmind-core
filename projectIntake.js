@@ -1423,7 +1423,10 @@ function mergeProjectIntakeAggregateCandidates(
           candidate?.pageNumber
         ]
           .map(Number)
-          .filter(Number.isFinite);
+          // Number(null) === 0: отсутствующая страница не становится «стр. 0».
+          .filter(function (page) {
+            return Number.isInteger(page) && page > 0;
+          });
 
       if (!byKey.has(key)) {
         const normalized = {
@@ -4362,6 +4365,7 @@ async function runBuildMindProjectIntake() {
           ],
           evidence: result.documents.map(function (item) {
             return {
+              sourceFile: item.fileName,
               fileName: item.fileName,
               kind: item.kind,
               sourcePages: item.ocrPages

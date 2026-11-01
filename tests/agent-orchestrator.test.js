@@ -101,7 +101,16 @@ async function run() {
   );
   assert.equal(
     report.status,
-    'completed'
+    'partial'
+  );
+  assert.equal(
+    report.truthStatus,
+    'needs-review'
+  );
+  assert.ok(
+    report.issues.includes(
+      'AGENT_PAYLOAD_WITHOUT_EVIDENCE'
+    )
   );
   assert.equal(
     report.payload.fileName,
@@ -133,7 +142,7 @@ async function run() {
     'test-material-agent,test-pdf-agent'
   );
   assert.equal(
-    summary.statusCounts.completed,
+    summary.statusCounts.partial,
     2
   );
 

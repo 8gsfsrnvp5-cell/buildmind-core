@@ -3091,9 +3091,11 @@ function normalizeAnalysisMaterialCandidate(
       '',
     quantity:
       Number(source.quantity) || 0,
+    // Единица и источник не подставляются догадкой:
+    // без них перенос в снабжение блокируется.
     unit:
       source.unit ||
-      'шт',
+      '',
     pageNumber:
       Number(
         source.pageNumber ||
@@ -3104,7 +3106,7 @@ function normalizeAnalysisMaterialCandidate(
       source.sourceDocument ||
       source.fileName ||
       sourceDocuments[0] ||
-      'Анализ комплекта',
+      '',
     reviewStatus:
       'confirmed',
     transferStatus:
@@ -3161,6 +3163,24 @@ function prepareAnalysisMaterialImport(
       reason: 'invalid-candidate',
       message:
         'У найденного материала нет корректного наименования или количества.'
+    };
+  }
+
+  if (!normalized.unit) {
+    return {
+      success: false,
+      reason: 'missing-unit',
+      message:
+        'У найденного материала нет единицы измерения. Уточните её в разделе «Спорные моменты».'
+    };
+  }
+
+  if (!normalized.sourceDocument) {
+    return {
+      success: false,
+      reason: 'missing-source',
+      message:
+        'У найденного материала нет исходного документа. Без источника позиция не переносится в снабжение.'
     };
   }
 

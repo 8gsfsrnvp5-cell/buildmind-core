@@ -3817,3 +3817,168 @@ html[dir="rtl"] .project-intake-review-item blockquote {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==================================================
+   КОНТРАКТ ДОСТОВЕРНОСТИ: статусы и спорные моменты
+   ================================================== */
+
+.workspace-truth-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  background: #eef1f5;
+  color: var(--muted);
+}
+
+.workspace-truth-badge-confirmed,
+.workspace-truth-badge-manual-override {
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.workspace-truth-badge-needs-review,
+.workspace-truth-badge-not-found {
+  background: var(--warning);
+  color: var(--warning-text);
+}
+
+.workspace-truth-badge-conflict,
+.workspace-truth-badge-unreadable,
+.workspace-truth-badge-rejected {
+  background: var(--critical);
+  color: var(--critical-text);
+}
+
+.workspace-truth-filter {
+  min-width: 160px;
+}
+
+.workspace-truth-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.workspace-truth-item {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--card);
+  min-width: 0;
+}
+
+.workspace-truth-risk-high {
+  border-left-color: var(--critical-text);
+}
+
+.workspace-truth-risk-medium {
+  border-left-color: var(--warning-text);
+}
+
+.workspace-truth-item p {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.workspace-truth-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workspace-truth-item-head p {
+  margin: 2px 0 0;
+}
+
+.workspace-truth-item-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.workspace-truth-risk {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.workspace-truth-values {
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.workspace-truth-values th,
+.workspace-truth-values td {
+  padding: 6px 8px;
+}
+
+.workspace-truth-decision {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f4f6f8;
+}
+
+.workspace-truth-form,
+.workspace-truth-history {
+  margin-top: 8px;
+}
+
+.workspace-truth-form summary,
+.workspace-truth-history summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.workspace-truth-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.workspace-truth-wide {
+  grid-column: 1 / -1;
+}
+
+.workspace-truth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.workspace-truth-form-message:empty {
+  display: none;
+}
+
+.workspace-truth-form-message {
+  color: var(--critical-text);
+}
+
+.workspace-truth-history ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.workspace-truth-row-action {
+  display: block;
+  margin-top: 6px;
+}
+
+.workspace-truth-subject-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-truth-subject-bar[hidden] {
+  display: none;
+}

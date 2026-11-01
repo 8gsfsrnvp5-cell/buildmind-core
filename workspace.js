@@ -623,11 +623,12 @@ function createWorkspaceAnalysisWorks() {
             <th>Начало</th>
             <th>Окончание</th>
             <th>Связь</th>
+            <th>Достоверность</th>
             <th>Источник</th>
           </tr>
         </thead>
         <tbody id="workspaceAnalysisWorksRows">
-          <tr><td colspan="9">Анализ комплекта ещё не выполнен.</td></tr>
+          <tr><td colspan="10">Анализ комплекта ещё не выполнен.</td></tr>
         </tbody>
       </table>
     </div>
@@ -669,12 +670,13 @@ function createWorkspaceAnalysisMaterials() {
             <th>Материал</th>
             <th>Ед.</th>
             <th>Количество</th>
+            <th>Достоверность</th>
             <th>Источник</th>
             <th>Действие</th>
           </tr>
         </thead>
         <tbody id="workspaceAnalysisMaterialRows">
-          <tr><td colspan="5">Материалы анализом не найдены.</td></tr>
+          <tr><td colspan="6">Материалы анализом не найдены.</td></tr>
         </tbody>
       </table>
     </div>
@@ -688,6 +690,452 @@ function createWorkspaceAnalysisMaterials() {
 }
 
 
+function createWorkspaceTruthReview() {
+  const section =
+    document.createElement('section');
+
+  section.id =
+    'workspaceTruthReview';
+  section.className =
+    'card workspace-truth-review';
+  section.innerHTML = `
+    <div class="workspace-analysis-head">
+      <div>
+        <span class="workspace-page-eyebrow">
+          КОНТРАКТ ДОСТОВЕРНОСТИ
+        </span>
+        <h2>Спорные моменты / Требует проверки</h2>
+        <p class="muted">
+          Значения без источника, конфликты ВОР и ГПР, ненайденные и
+          непрочитанные данные. Фактом считается только значение,
+          подтверждённое инженером ПТО, руководителем или администратором
+          проекта. Исходные значения анализа сохраняются в истории.
+        </p>
+      </div>
+      <label class="workspace-truth-filter">
+        Показать
+        <select id="workspaceTruthReviewFilter">
+          <option value="open">Спорные (открытые)</option>
+          <option value="pending">Ожидают подтверждения</option>
+          <option value="resolved">Решённые</option>
+          <option value="all">Все</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="workspace-analysis-stats workspace-analysis-stats-compact">
+      <div><strong id="workspaceTruthOpenCount">0</strong><span>Открыто</span></div>
+      <div><strong id="workspaceTruthConflictCount">0</strong><span>Конфликтов</span></div>
+      <div><strong id="workspaceTruthResolvedCount">0</strong><span>Решено</span></div>
+      <div><strong id="workspaceTruthPendingCount">0</strong><span>Ожидают подтверждения</span></div>
+      <div><strong id="workspaceTruthConfirmedCount">0</strong><span>Подтверждённых значений</span></div>
+    </div>
+
+    <p id="workspaceTruthReviewMessage" class="muted workspace-analysis-import-status">
+      После анализа комплекта здесь появятся спорные значения.
+    </p>
+
+    <p id="workspaceTruthSubjectBar" class="workspace-truth-subject-bar" hidden>
+      <span></span>
+      <button type="button" class="small-btn secondary-btn" data-truth-subject-reset>
+        Показать все строки
+      </button>
+    </p>
+
+    <div id="workspaceTruthReviewList" class="workspace-truth-list"></div>
+  `;
+
+  return section;
+}
+
+
+const WORKSPACE_TRUTH_REVIEW_LIMIT = 50;
+
+let workspaceTruthReviewIdentity = {
+  role: '',
+  user: ''
+};
+
+let workspaceTruthSubjectFilter = '';
+
+
+function renderWorkspaceTruthSourceCell(row) {
+  const truth = getWorkspaceTruthReview();
+  const sources = [
+    ['ВОР', row.vorSource],
+    ['ГПР', row.gprSource]
+  ].filter(function (entry) {
+    return entry[1];
+  });
+
+  if (!truth || sources.length === 0) {
+    const pages = (row.sourcePages || []).length > 0
+      ? ' · стр. ' + row.sourcePages.join(', ')
+      : '';
+
+    return ((row.sourceDocuments || []).join(', ') || '—') + pages;
+  }
+
+  return sources.map(function (entry) {
+    return entry[0] + ': ' + truth.describeSource(entry[1]);
+  }).join('; ');
+}
+
+
+function renderWorkspaceTruthRowAction(subjectId) {
+  return `
+    <button
+      type="button"
+      class="small-btn secondary-btn workspace-truth-row-action"
+      data-truth-subject="${escapeWorkspaceHtml(subjectId)}"
+    >
+      Проверить
+    </button>
+  `;
+}
+
+
+function openWorkspaceTruthSubject(subjectId) {
+  const filter = getWorkspaceElement('workspaceTruthReviewFilter');
+
+  workspaceTruthSubjectFilter = subjectId || '';
+
+  if (filter) {
+    filter.value = 'all';
+  }
+
+  if (subjectId) {
+    openBuildMindWorkspaceView('works', { persist: false, scroll: false });
+  }
+
+  renderWorkspaceAnalysis();
+
+  if (subjectId) {
+    getWorkspaceElement('workspaceTruthReview')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  }
+}
+
+
+function getWorkspaceTruthReview() {
+  return window.BuildMindTruthReview || null;
+}
+
+
+function getWorkspaceTruthModel(snapshot) {
+  const truth = getWorkspaceTruthReview();
+
+  return truth && snapshot
+    ? truth.buildModel(snapshot)
+    : null;
+}
+
+
+function formatWorkspaceTruthValue(value, unit) {
+  const truth = getWorkspaceTruthReview();
+
+  if (value == null || value === '' || value === truth?.unknown) {
+    return '—';
+  }
+
+  const text = typeof value === 'number'
+    ? formatWorkspaceAnalysisQuantity(value)
+    : /^\d{4}-\d{2}-\d{2}$/.test(String(value))
+      ? formatWorkspaceAnalysisDate(value)
+      : String(value);
+
+  return unit ? text + ' ' + unit : text;
+}
+
+
+function renderWorkspaceTruthBadge(status) {
+  const truth = getWorkspaceTruthReview();
+
+  if (!truth || !status) {
+    return '<span class="workspace-truth-badge">—</span>';
+  }
+
+  return `
+    <span class="workspace-truth-badge workspace-truth-badge-${escapeWorkspaceHtml(status)}">
+      ${escapeWorkspaceHtml(truth.statusLabels[status] || status)}
+    </span>
+  `;
+}
+
+
+function renderWorkspaceTruthHistoryEntry(entry) {
+  const change = entry.action === 'assign'
+    ? ' · ' + (entry.responsible || '—') + ', срок ' +
+      (entry.dueDate ? formatWorkspaceAnalysisDate(entry.dueDate) : '—')
+    : ': ' + formatWorkspaceTruthValue(entry.previousValue, entry.unit) +
+      ' → ' + formatWorkspaceTruthValue(entry.newValue, entry.unit);
+
+  return `
+    <li>
+      ${escapeWorkspaceHtml(new Date(entry.decidedAt).toLocaleString('ru-RU'))} ·
+      ${escapeWorkspaceHtml(entry.roleLabel + ' ' + entry.user)} ·
+      ${escapeWorkspaceHtml(entry.actionLabel + change)}
+      ${entry.reason ? ' · основание: ' + escapeWorkspaceHtml(entry.reason) : ''}
+      ${entry.documentRef ? ' · документ: ' + escapeWorkspaceHtml(entry.documentRef) : ''}
+      ${entry.comment ? ' · ' + escapeWorkspaceHtml(entry.comment) : ''}
+    </li>
+  `;
+}
+
+
+function renderWorkspaceTruthDispute(dispute) {
+  const truth = getWorkspaceTruthReview();
+  const riskLabels = {
+    high: 'Высокий риск',
+    medium: 'Средний риск',
+    low: 'Низкий риск'
+  };
+  const roleOptions = Object.keys(truth.roles).map(function (role) {
+    return `<option value="${escapeWorkspaceHtml(role)}" ${
+      workspaceTruthReviewIdentity.role === role ? 'selected' : ''
+    }>${escapeWorkspaceHtml(truth.roles[role])}</option>`;
+  }).join('');
+  const sourceOptions = dispute.values.map(function (item, index) {
+    return `<option value="${index}">${escapeWorkspaceHtml(
+      item.label + ': ' + formatWorkspaceTruthValue(item.value, item.unit)
+    )}</option>`;
+  }).join('');
+  const history = Array.isArray(dispute.history) ? dispute.history : [];
+  const decision = dispute.decision;
+
+  return `
+    <article
+      class="workspace-truth-item workspace-truth-risk-${escapeWorkspaceHtml(dispute.risk)}"
+      data-truth-dispute-id="${escapeWorkspaceHtml(dispute.disputeId)}"
+    >
+      <div class="workspace-truth-item-head">
+        <div>
+          <strong>${escapeWorkspaceHtml(dispute.subjectLabel)}</strong>
+          <p class="muted">${escapeWorkspaceHtml(dispute.fieldLabel)}</p>
+        </div>
+        <div class="workspace-truth-item-badges">
+          ${renderWorkspaceTruthBadge(dispute.status)}
+          <span class="workspace-truth-risk">${escapeWorkspaceHtml(riskLabels[dispute.risk] || dispute.risk)}</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="workspace-truth-values">
+          <thead>
+            <tr><th>Источник</th><th>Значение</th><th>Документ и страница</th></tr>
+          </thead>
+          <tbody>
+            ${dispute.values.map(function (item) {
+              return `
+                <tr>
+                  <td>${escapeWorkspaceHtml(item.label)}</td>
+                  <td><strong>${escapeWorkspaceHtml(formatWorkspaceTruthValue(item.value, item.unit))}</strong></td>
+                  <td>${escapeWorkspaceHtml(item.sourceLabel)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <p><strong>Причина:</strong> ${escapeWorkspaceHtml(dispute.reason)}</p>
+      <p class="muted"><strong>Что проверить:</strong> ${escapeWorkspaceHtml(dispute.checkHint)}</p>
+      <p class="muted">
+        Ответственный: ${escapeWorkspaceHtml(dispute.responsible || 'не назначен')} ·
+        срок проверки: ${escapeWorkspaceHtml(dispute.dueDate ? formatWorkspaceAnalysisDate(dispute.dueDate) : 'не задан')}
+      </p>
+      ${
+        decision
+          ? `<p class="workspace-truth-decision">
+              <strong>Решение:</strong>
+              ${escapeWorkspaceHtml(decision.actionLabel)} —
+              ${escapeWorkspaceHtml(formatWorkspaceTruthValue(dispute.currentValue, dispute.currentUnit))}.
+              ${escapeWorkspaceHtml(decision.roleLabel + ' ' + decision.user)},
+              ${escapeWorkspaceHtml(new Date(decision.decidedAt).toLocaleString('ru-RU'))}.
+              ${decision.comment ? 'Комментарий: ' + escapeWorkspaceHtml(decision.comment) : ''}
+            </p>`
+          : ''
+      }
+
+      <details class="workspace-truth-form">
+        <summary>Решение инженера</summary>
+        <div class="workspace-truth-form-grid">
+          <label>Роль
+            <select data-truth-field="role">
+              <option value="">— выберите —</option>
+              ${roleOptions}
+            </select>
+          </label>
+          <label>ФИО
+            <input data-truth-field="user" value="${escapeWorkspaceHtml(workspaceTruthReviewIdentity.user)}" />
+          </label>
+          <label class="workspace-truth-wide">Основание (обязательно)
+            <input data-truth-field="reason" placeholder="Например: сверено с подписанной ВОР, стр. 4" />
+          </label>
+          <label>Источник значения
+            <select data-truth-field="sourceIndex">${sourceOptions}</select>
+          </label>
+          <label>Исправленное значение
+            <input data-truth-field="newValue" />
+          </label>
+          <label>Ед. изм.
+            <input data-truth-field="unit" value="${escapeWorkspaceHtml(dispute.currentUnit || '')}" />
+          </label>
+          <label>Документ или фото
+            <input data-truth-field="documentRef" placeholder="Файл, страница или фото" />
+          </label>
+          <label>Ответственный
+            <input data-truth-field="responsible" value="${escapeWorkspaceHtml(dispute.responsible || '')}" />
+          </label>
+          <label>Срок проверки
+            <input data-truth-field="dueDate" type="date" value="${escapeWorkspaceHtml(dispute.dueDate || '')}" />
+          </label>
+          <label class="workspace-truth-wide">Комментарий
+            <input data-truth-field="comment" />
+          </label>
+        </div>
+        <div class="workspace-truth-actions">
+          <button type="button" class="small-btn" data-truth-action="confirm-source">Подтвердить значение из источника</button>
+          ${dispute.values.length > 1 ? '<button type="button" class="small-btn" data-truth-action="choose-source">Выбрать указанный источник</button>' : ''}
+          <button type="button" class="small-btn" data-truth-action="manual-value">Ввести исправленное значение</button>
+          <button type="button" class="small-btn" data-truth-action="keep-unknown">Оставить неизвестным</button>
+          <button type="button" class="small-btn" data-truth-action="reject">Отклонить вывод</button>
+          <button type="button" class="small-btn" data-truth-action="rerecognize">Вернуть на распознавание</button>
+          <button type="button" class="small-btn secondary-btn" data-truth-action="assign">Назначить ответственного</button>
+        </div>
+        <p class="muted workspace-truth-form-message" data-truth-message></p>
+      </details>
+
+      ${
+        history.length > 0
+          ? `<details class="workspace-truth-history">
+              <summary>История решений (${history.length})</summary>
+              <ol>${history.map(renderWorkspaceTruthHistoryEntry).join('')}</ol>
+            </details>`
+          : ''
+      }
+    </article>
+  `;
+}
+
+
+function renderWorkspaceTruthReview(model) {
+  const list = getWorkspaceElement('workspaceTruthReviewList');
+  const filter = getWorkspaceElement('workspaceTruthReviewFilter')?.value || 'open';
+  const summary = model?.summary || {};
+
+  setWorkspaceAnalysisText('workspaceTruthOpenCount', summary.openDisputesCount || 0);
+  setWorkspaceAnalysisText('workspaceTruthConflictCount', summary.conflictCount || 0);
+  setWorkspaceAnalysisText('workspaceTruthResolvedCount', summary.resolvedDisputesCount || 0);
+  setWorkspaceAnalysisText('workspaceTruthConfirmedCount', summary.confirmedCount || 0);
+  setWorkspaceAnalysisText('workspaceTruthPendingCount', summary.pendingConfirmationCount || 0);
+
+  if (!list) {
+    return;
+  }
+
+  if (!getWorkspaceTruthReview()) {
+    list.innerHTML = '<p class="muted">Модуль контракта достоверности не загружен.</p>';
+    return;
+  }
+
+  if (!model) {
+    list.innerHTML = '';
+    setWorkspaceProcurementStatus(
+      'workspaceTruthReviewMessage',
+      'После анализа комплекта здесь появятся спорные значения.'
+    );
+    return;
+  }
+
+  const pool = {
+    open: model.openDisputes,
+    pending: model.pendingConfirmations,
+    resolved: model.disputes.concat(model.confirmations).filter(function (item) {
+      return item.resolved;
+    }),
+    all: model.disputes.concat(model.confirmations)
+  }[filter] || model.openDisputes;
+  const disputes = workspaceTruthSubjectFilter
+    ? pool.filter(function (item) {
+        return item.subjectId === workspaceTruthSubjectFilter;
+      })
+    : pool;
+  const subjectLabel = workspaceTruthSubjectFilter
+    ? model.records.find(function (record) {
+        return record.subjectId === workspaceTruthSubjectFilter;
+      })?.subjectLabel || workspaceTruthSubjectFilter
+    : '';
+  const subjectFilterBar = getWorkspaceElement('workspaceTruthSubjectBar');
+
+  if (subjectFilterBar) {
+    subjectFilterBar.hidden = !workspaceTruthSubjectFilter;
+    subjectFilterBar.querySelector('span').textContent =
+      'Показаны значения: ' + subjectLabel;
+  }
+
+  setWorkspaceProcurementStatus(
+    'workspaceTruthReviewMessage',
+    model.disputes.length === 0 && filter === 'open'
+      ? 'Спорных значений не найдено. Извлечённые значения остаются неподтверждёнными до проверки инженера — см. фильтр «Ожидают подтверждения».'
+      : disputes.length > WORKSPACE_TRUTH_REVIEW_LIMIT
+        ? `Показаны первые ${WORKSPACE_TRUTH_REVIEW_LIMIT} из ${disputes.length}.`
+        : ''
+  );
+
+  list.innerHTML = disputes.length === 0
+    ? '<p class="muted">В выбранном фильтре записей нет.</p>'
+    : disputes
+        .slice(0, WORKSPACE_TRUTH_REVIEW_LIMIT)
+        .map(renderWorkspaceTruthDispute)
+        .join('');
+}
+
+
+function submitWorkspaceTruthDecision(button) {
+  const card = button.closest('[data-truth-dispute-id]');
+  const truth = getWorkspaceTruthReview();
+  const message = card?.querySelector('[data-truth-message]');
+
+  if (!card || !truth) {
+    return null;
+  }
+
+  const decision = {
+    action: button.dataset.truthAction
+  };
+
+  card.querySelectorAll('[data-truth-field]').forEach(function (field) {
+    decision[field.dataset.truthField] = field.value;
+  });
+
+  const result = truth.applyDecision(
+    getWorkspaceAnalysisSnapshot(),
+    card.dataset.truthDisputeId,
+    decision
+  );
+
+  if (!result.success) {
+    if (message) {
+      message.textContent = result.message;
+    }
+    return result;
+  }
+
+  workspaceTruthReviewIdentity = {
+    role: decision.role,
+    user: decision.user
+  };
+
+  // Событие buildmind:truth-review-changed перерисует экран.
+  setWorkspaceProcurementStatus('workspaceTruthReviewMessage', result.message);
+
+  return result;
+}
+
+
 function setWorkspaceAnalysisText(id, value) {
   const element = getWorkspaceElement(id);
 
@@ -698,12 +1146,15 @@ function setWorkspaceAnalysisText(id, value) {
 
 
 function formatWorkspaceAnalysisQuantity(value) {
+  // Пустое значение — неизвестно, а не ноль: Number(null) === 0.
+  if (value == null || String(value).trim() === '') {
+    return '—';
+  }
+
   const number = Number(value);
 
   if (!Number.isFinite(number)) {
-    return value == null || value === ''
-      ? '—'
-      : String(value);
+    return String(value);
   }
 
   return number.toLocaleString('ru-RU', {
@@ -847,6 +1298,19 @@ function prepareWorkspaceAnalysisMaterial(
   }
 
   if (
+    getWorkspaceTruthModel(snapshot)
+      ?.subjectStatus[
+        'material-' + Number(materialIndex)
+      ] === 'rejected'
+  ) {
+    setWorkspaceProcurementStatus(
+      'workspaceAnalysisMaterialsMessage',
+      'Позиция отклонена инженером и не переносится в контроль снабжения.'
+    );
+    return null;
+  }
+
+  if (
     !procurement ||
     typeof procurement
       .prepareAnalysisMaterial !==
@@ -879,6 +1343,11 @@ function prepareWorkspaceAnalysisMaterial(
 function renderWorkspaceAnalysis() {
   const snapshot = getWorkspaceAnalysisSnapshot();
   const summary = snapshot?.summary || {};
+  const truthModel = getWorkspaceTruthModel(snapshot);
+  const subjectStatus = truthModel?.subjectStatus || {};
+  const reviewCount = truthModel
+    ? truthModel.summary.openDisputesCount
+    : summary.reviewCount || 0;
   const statusLabels = {
     complete: 'Анализ завершён',
     review: 'Нужна проверка',
@@ -940,7 +1409,7 @@ function renderWorkspaceAnalysis() {
   );
   setWorkspaceAnalysisText(
     'workspaceAnalysisReview',
-    summary.reviewCount || 0
+    reviewCount
   );
   setWorkspaceAnalysisText(
     'workspaceWorksVorCount',
@@ -956,7 +1425,7 @@ function renderWorkspaceAnalysis() {
   );
   setWorkspaceAnalysisText(
     'workspaceWorksReviewCount',
-    summary.reviewCount || 0
+    reviewCount
   );
 
   const status = getWorkspaceElement('workspaceAnalysisStatus');
@@ -1019,13 +1488,8 @@ function renderWorkspaceAnalysis() {
     };
 
     worksBody.innerHTML = rows.length === 0
-      ? '<tr><td colspan="9">Анализ комплекта ещё не дал строк ВОР/ГПР.</td></tr>'
+      ? '<tr><td colspan="10">Анализ комплекта ещё не дал строк ВОР/ГПР.</td></tr>'
       : rows.slice(0, 500).map(function (row) {
-          const sources = (row.sourceDocuments || []).join(', ') || '—';
-          const pages = (row.sourcePages || []).length > 0
-            ? ' · стр. ' + row.sourcePages.join(', ')
-            : '';
-
           return `
             <tr class="${row.requiresReview ? 'workspace-analysis-row-review' : ''}">
               <td>${escapeWorkspaceHtml(row.workCode || '—')}</td>
@@ -1041,7 +1505,11 @@ function renderWorkspaceAnalysis() {
                 </span>
                 ${row.requiresReview ? '<span class="workspace-analysis-review-flag">Проверить</span>' : ''}
               </td>
-              <td>${escapeWorkspaceHtml(sources + pages)}</td>
+              <td>
+                ${renderWorkspaceTruthBadge(subjectStatus[row.rowId])}
+                ${truthModel ? renderWorkspaceTruthRowAction(row.rowId) : ''}
+              </td>
+              <td>${escapeWorkspaceHtml(renderWorkspaceTruthSourceCell(row))}</td>
             </tr>
           `;
         }).join('');
@@ -1060,9 +1528,13 @@ function renderWorkspaceAnalysis() {
 
   if (materialBody) {
     materialBody.innerHTML = materials.length === 0
-      ? '<tr><td colspan="5">Материалы анализом не найдены.</td></tr>'
+      ? '<tr><td colspan="6">Материалы анализом не найдены.</td></tr>'
       : materials.slice(0, 500).map(function (item, index) {
-          const sources = (item.sourceDocuments || []).join(', ') || '—';
+          const source = getWorkspaceTruthReview()
+            ? getWorkspaceTruthReview().describeSource(item)
+            : (item.sourceDocuments || []).join(', ') || '—';
+          const truthStatus = subjectStatus['material-' + index];
+          const rejected = truthStatus === 'rejected';
           const transferred =
             isWorkspaceAnalysisMaterialTransferred(
               item
@@ -1073,21 +1545,27 @@ function renderWorkspaceAnalysis() {
               <td><strong>${escapeWorkspaceHtml(item.workName || '—')}</strong></td>
               <td>${escapeWorkspaceHtml(item.unit || '—')}</td>
               <td>${escapeWorkspaceHtml(formatWorkspaceAnalysisQuantity(item.quantity))}</td>
-              <td>${escapeWorkspaceHtml(sources)}</td>
+              <td>
+                ${renderWorkspaceTruthBadge(truthStatus)}
+                ${truthModel ? renderWorkspaceTruthRowAction('material-' + index) : ''}
+              </td>
+              <td>${escapeWorkspaceHtml(source)}</td>
               <td>
                 <button
                   type="button"
                   class="small-btn workspace-analysis-material-action"
                   data-analysis-material-index="${index}"
-                  ${transferred ? 'disabled' : ''}
+                  ${transferred || rejected ? 'disabled' : ''}
                 >
-                  ${transferred ? 'Перенесено' : 'В контроль снабжения'}
+                  ${transferred ? 'Перенесено' : rejected ? 'Отклонено' : 'В контроль снабжения'}
                 </button>
               </td>
             </tr>
           `;
         }).join('');
   }
+
+  renderWorkspaceTruthReview(truthModel);
 }
 
 
@@ -1311,6 +1789,10 @@ moveWorkspaceNode(
 
   views.works.appendChild(
     createWorkspaceAnalysisWorks()
+  );
+
+  views.works.appendChild(
+    createWorkspaceTruthReview()
   );
 
 
@@ -1900,6 +2382,15 @@ function initializeWorkspaceObservers() {
 
 
   window.addEventListener(
+    'buildmind:truth-review-changed',
+    function () {
+      renderWorkspaceAnalysis();
+      updateWorkspaceDashboard();
+    }
+  );
+
+
+  window.addEventListener(
     'buildmind:materials-changed',
     function () {
       renderWorkspaceAnalysis();
@@ -2020,6 +2511,40 @@ function initializeBuildMindWorkspace() {
         return;
       }
 
+      const truthButton =
+        event.target.closest(
+          '[data-truth-action]'
+        );
+
+      if (truthButton) {
+        submitWorkspaceTruthDecision(
+          truthButton
+        );
+        return;
+      }
+
+      const truthSubjectButton =
+        event.target.closest(
+          '[data-truth-subject]'
+        );
+
+      if (truthSubjectButton) {
+        openWorkspaceTruthSubject(
+          truthSubjectButton.dataset
+            .truthSubject
+        );
+        return;
+      }
+
+      if (
+        event.target.closest(
+          '[data-truth-subject-reset]'
+        )
+      ) {
+        openWorkspaceTruthSubject('');
+        return;
+      }
+
       const materialButton =
         event.target.closest(
           '[data-analysis-material-index]'
@@ -2030,6 +2555,19 @@ function initializeBuildMindWorkspace() {
           materialButton.dataset
             .analysisMaterialIndex
         );
+      }
+    }
+  );
+
+
+  document.addEventListener(
+    'change',
+    function (event) {
+      if (
+        event.target.id ===
+        'workspaceTruthReviewFilter'
+      ) {
+        renderWorkspaceAnalysis();
       }
     }
   );

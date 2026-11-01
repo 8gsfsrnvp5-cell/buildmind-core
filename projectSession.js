@@ -20,7 +20,8 @@ const BUILDMIND_LIVE_PROJECT_STORAGE_KEYS =
     'buildmind-material-candidate-reviews-v2-clean',
     'buildmind-project-core-v1',
     'buildmind-document-registry-v1',
-    'buildmind-change-sets-v1'
+    'buildmind-change-sets-v1',
+    'buildmind-truth-review-v1'
   ]);
 
 const BUILDMIND_WORKSPACE_VIEW_STORAGE_KEY =
